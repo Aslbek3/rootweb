@@ -1,0 +1,19 @@
+[Unit]
+Description=Claude Code Web
+After=network.target
+
+[Service]
+Type=simple
+# Kodni VPS'da qayerga joylashtirsangiz, shu yo'lni ko'rsating:
+WorkingDirectory=/home/USERNAME/claude-code-web
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+# .env shu papkada bo'lishi kerak (dotenv uni avtomatik o'qiydi)
+EnvironmentFile=/home/USERNAME/claude-code-web/.env
+User=USERNAME
+Group=USERNAME
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

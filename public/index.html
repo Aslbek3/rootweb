@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<script>(function(){try{var t=localStorage.getItem('rootwebTheme');if(t&&t!=='claude')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claude Code Web</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#262624">
+<link rel="apple-touch-icon" href="/icon.svg">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="tl-title">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="tl-name">Claude Code</span>
+        <span class="cwd" id="cwdLabel">—</span>
+      </div>
+      <div class="tl-actions">
+        <button class="icon-btn" id="clearChatBtn" title="Chatni tozalash" aria-label="Chatni tozalash">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 5v6h-6"/></svg>
+        </button>
+        <button class="icon-btn" id="themeBtn" title="Mavzu (bosib almashtiring)" aria-label="Mavzu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18V3z" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button class="icon-btn" id="notifyBtn" title="Bildirishnomalar" aria-label="Bildirishnomalar">
+          <svg class="i-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10a6 6 0 1 1 12 0c0 3.2 1 5 2 6H4c1-1 2-2.8 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>
+          <svg class="i-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10a6 6 0 1 1 12 0c0 3.2 1 5 2 6H4c1-1 2-2.8 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/><path d="M3 3l18 18"/></svg>
+        </button>
+        <button class="icon-btn" id="filesBtn" title="Fayllar va loyihalar" aria-label="Fayllar va loyihalar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6z"/></svg>
+          <span class="badge-dot hidden" id="filesBadge"></span>
+        </button>
+        <a class="icon-btn" href="/auth.html" title="Claude hisobini ulash" aria-label="Claude hisobini ulash">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M16 7l3 3"/><path d="M13 10l2.5 2.5"/></svg>
+        </a>
+        <button class="icon-btn" id="logoutBtn" title="Chiqish" aria-label="Chiqish">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/><path d="M15 8l4 4-4 4"/><path d="M19 12H9"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="messages"></div>
+
+    <div class="composer-wrap">
+      <form id="composer">
+        <div id="attachmentRow" class="attachment-row hidden"></div>
+        <textarea id="input" rows="1" placeholder="Xabar yozing..."></textarea>
+        <div class="composer-toolbar">
+          <div class="composer-toolbar-left">
+            <button type="button" id="attachBtn" class="icon-btn-sm" title="Rasm yoki fayl biriktirish" aria-label="Rasm yoki fayl biriktirish">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <input type="file" id="composerFileInput" class="hidden" multiple>
+            <button type="button" id="modeBtn" class="mode-pill" data-mode="default" title="Ruxsat rejimi (bosib almashtiring)">Manual</button>
+          </div>
+          <div class="composer-toolbar-right">
+            <button type="button" id="stopBtn" title="To'xtatish" aria-label="To'xtatish">
+              <svg viewBox="0 0 24 24" aria-hidden="true" width="12" height="12"><rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" stroke="none"/></svg>
+            </button>
+            <button type="submit" id="sendBtn" title="Yuborish" aria-label="Yuborish">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="drawerOverlay" class="overlay hidden"></div>
+  <aside id="drawer" class="drawer">
+    <div class="drawer-header">
+      <div class="drawer-tabs">
+        <button type="button" class="drawer-tab active" data-tab="projects">loyihalar</button>
+        <button type="button" class="drawer-tab" data-tab="files">fayllar</button>
+        <button type="button" class="drawer-tab" data-tab="limit">limit</button>
+        <button type="button" class="drawer-tab" data-tab="folders">papkalar</button>
+      </div>
+      <button class="icon-btn" id="drawerCloseBtn" title="Yopish" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
+    <div class="drawer-panel" id="panelProjects">
+      <form id="addProjectForm" class="add-project-form">
+        <input type="text" id="newProjectPath" placeholder="mavjud papka yo'li" required>
+        <button type="submit" title="Qo'shish">+</button>
+      </form>
+
+      <button type="button" id="newProjectToggle" class="new-project-toggle">+ yangi loyiha papkasi yaratish</button>
+      <form id="createProjectForm" class="create-project-form hidden">
+        <input type="text" id="newProjectParent" placeholder="ota papka, masalan D:\Loyihalar" required>
+        <input type="text" id="newProjectName" placeholder="yangi papka nomi" required>
+        <button type="submit">yarat va och</button>
+      </form>
+
+      <div id="projectList" class="project-list"></div>
+    </div>
+
+    <div class="drawer-panel hidden" id="panelFiles">
+      <div class="file-breadcrumb-row">
+        <div id="fileBreadcrumb" class="file-breadcrumb"></div>
+        <button type="button" id="uploadFileBtn" class="icon-btn" title="Fayl yuklash" aria-label="Fayl yuklash">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        </button>
+        <button type="button" id="newFolderToggle" class="icon-btn" title="Yangi papka" aria-label="Yangi papka">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6z"/><path d="M12 11v5M9.5 13.5h5"/></svg>
+        </button>
+      </div>
+      <input type="file" id="uploadFileInput" class="hidden">
+      <div id="uploadStatus" class="empty-hint hidden"></div>
+      <form id="createFolderForm" class="create-project-form hidden">
+        <input type="text" id="newFolderName" placeholder="papka nomi" required>
+        <button type="submit">yarat</button>
+      </form>
+      <div id="fileTree" class="file-tree"></div>
+    </div>
+
+    <div class="drawer-panel hidden" id="panelLimit">
+      <div id="rateLimitStats" class="rate-limit-stats"></div>
+      <div id="usageStats" class="usage-stats"></div>
+      <div class="empty-hint">"Joriy sessiya" faqat server ishga tushirilgandan beri hisoblanadi (server qayta ishga tushirilsa nolga qaytadi). 5-soatlik/haftalik limit — Claude hisobingizning haqiqiy holati.</div>
+    </div>
+
+    <div class="drawer-panel hidden" id="panelFolders">
+      <div class="empty-hint">VPS'dagi istalgan absolyut yo'lni yorliq sifatida saqlang — bosilganda fayllar paneli to'g'ridan-to'g'ri o'sha papkaga o'tadi (faol Claude suhbati o'zgarmaydi).</div>
+      <form id="addFolderForm" class="create-project-form">
+        <input type="text" id="newFolderLabel" placeholder="nomi, masalan Nginx configs">
+        <input type="text" id="newFolderPath" placeholder="/etc/nginx" required>
+        <button type="submit">qo'shish</button>
+      </form>
+      <div id="folderBookmarkList" class="project-list"></div>
+    </div>
+  </aside>
+
+  <div id="fileViewerOverlay" class="overlay hidden"></div>
+  <div id="fileViewer" class="file-viewer">
+    <div class="file-viewer-header">
+      <span id="fileViewerName"></span>
+      <a class="icon-btn" id="fileDownloadBtn" title="Yuklab olish" aria-label="Yuklab olish" download>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      </a>
+      <button class="icon-btn" id="fileEditBtn" title="Tahrirlash" aria-label="Tahrirlash">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L15.5 5.5a1.5 1.5 0 0 1 2 2L7 18l-4 1"/><path d="M13.5 7.5l2 2"/></svg>
+      </button>
+      <button class="icon-btn hidden" id="fileSaveBtn" title="Saqlash" aria-label="Saqlash">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </button>
+      <button class="icon-btn" id="fileViewerCloseBtn" title="Yopish" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <pre id="fileViewerContent" class="file-viewer-content"></pre>
+    <textarea id="fileViewerEditor" class="file-viewer-editor hidden" spellcheck="false"></textarea>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

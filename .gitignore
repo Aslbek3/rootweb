@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.log
+server/data/
+CLAUDE.md
+.env.bak_*
+.env.*
