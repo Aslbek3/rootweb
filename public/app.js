@@ -43,6 +43,7 @@
   const newProjectNameInput = document.getElementById('newProjectName');
   const projectListEl = document.getElementById('projectList');
   const fileBreadcrumbEl = document.getElementById('fileBreadcrumb');
+  const gotoRootBtn = document.getElementById('gotoRootBtn');
   const fileTreeEl = document.getElementById('fileTree');
   const newFolderToggle = document.getElementById('newFolderToggle');
   const createFolderForm = document.getElementById('createFolderForm');
@@ -1046,6 +1047,12 @@
     }
   });
 
+  gotoRootBtn.addEventListener('click', () => {
+    browseRoot = '/root';
+    currentDir = '.';
+    loadFiles();
+  });
+
   newFolderToggle.addEventListener('click', () => {
     createFolderForm.classList.toggle('hidden');
     if (!createFolderForm.classList.contains('hidden')) newFolderNameInput.focus();
@@ -1470,17 +1477,8 @@
   }
 
   function loadFolderBookmarks() {
-    const raw = localStorage.getItem(FOLDER_BOOKMARKS_KEY);
-    try { folderBookmarks = JSON.parse(raw || '[]'); }
+    try { folderBookmarks = JSON.parse(localStorage.getItem(FOLDER_BOOKMARKS_KEY) || '[]'); }
     catch { folderBookmarks = []; }
-    // "/root"ga tezkor sakrash uchun standart yorliq — ro'yxat bo'sh bo'lgan
-    // har safar (hali umuman saqlanmagan YOKI avval bo'shatib qo'yilgan)
-    // qayta qo'shiladi, shunda loyiha almashtirmasdan istalgan joydan kirish
-    // doim mavjud bo'ladi.
-    if (!folderBookmarks.length) {
-      folderBookmarks = [{ id: genId(), label: 'root', path: '/root' }];
-      saveFolderBookmarks();
-    }
   }
 
   function saveFolderBookmarks() {
