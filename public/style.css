@@ -745,8 +745,17 @@ button.icon-btn-sm:active { background: var(--bg-elev-3); color: var(--text); }
   border-bottom: 1px solid var(--border);
   padding: 10px 8px 10px 14px;
   flex-shrink: 0;
+  gap: 6px;
 }
-.drawer-tabs { display: flex; gap: 4px; }
+.drawer-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  min-width: 0;
+}
+.drawer-tabs::-webkit-scrollbar { display: none; }
 .drawer-tab {
   background: none;
   border: 1px solid transparent;
@@ -754,11 +763,17 @@ button.icon-btn-sm:active { background: var(--bg-elev-3); color: var(--text); }
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 600;
-  padding: 7px 12px;
+  padding: 7px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .drawer-tab.active { color: var(--accent-bright); background: var(--accent-wash); }
+
+@media (max-width: 380px) {
+  .drawer-tab { font-size: 12px; padding: 6px 8px; }
+}
 
 .drawer-panel {
   flex: 1;
