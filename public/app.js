@@ -1498,8 +1498,10 @@
         drawerTabs.forEach((b) => b.classList.toggle('active', b.dataset.tab === 'files'));
         panelProjects.classList.add('hidden');
         panelFiles.classList.remove('hidden');
+        panelBots.classList.add('hidden');
         panelLimit.classList.add('hidden');
         panelFolders.classList.add('hidden');
+        stopBotPolling();
         loadFiles();
         closeDrawer();
       });
