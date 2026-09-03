@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { query } = require('@anthropic-ai/claude-agent-sdk');
+const auditLog = require('./auditLog');
 
 // Tool calls that are read-only / low-risk are auto-approved so a phone
 // session isn't interrupted by a permission prompt on every file read.
@@ -129,7 +130,7 @@ function clearSessionMeta(projectId) {
   saveSessionsMeta();
 }
 
-function createSession(projectId, cwd) {
+function createSession(projectId, cwd, description) {
   const savedMeta = sessionsMeta[projectId];
   const clients = new Set();
   // Pre-seed from disk (see SESSIONS_META_FILE note above) so a reconnecting
@@ -199,6 +200,17 @@ function createSession(projectId, cwd) {
     options: {
       cwd,
       permissionMode: 'default',
+      // Loyiha tavsifi ("loyihalar" panelidagi description maydoni) bo'lsa,
+      // Claude Code'ning standart tizim promptiga qo'shimcha sifatida
+      // qo'shiladi — shuning uchun sessiya boshlanishi bilanoq Claude bu
+      // qaysi loyiha/bot ekanini, uning ma'lum xususiyatlarini biladi va
+      // foydalanuvchi har safar qayta tushuntirishi shart bo'lmaydi.
+      // `preset: 'claude_code'` standart xatti-harakatni (fayl-tizim
+      // xabardorligi, tool ishlatish uslubi va h.k.) saqlab qoladi — faqat
+      // ustiga qo'shiladi, almashtirmaydi.
+      ...(description && description.trim()
+        ? { systemPrompt: { type: 'preset', preset: 'claude_code', append: `Loyiha haqida kontekst:\n${description.trim()}` } }
+        : {}),
       // Reattach to the same Claude session across a server restart (see
       // sessionsMeta above). Absent on a project's very first-ever session,
       // and self-healing (cleared below) if the saved id ever fails to
@@ -231,7 +243,7 @@ function createSession(projectId, cwd) {
         }
         const id = opts.toolUseID || crypto.randomUUID();
         emit({ type: 'permission_request', id, name: toolName, input });
-        return new Promise((resolve) => pendingPermissions.set(id, resolve));
+        return new Promise((resolve) => pendingPermissions.set(id, { resolve, name: toolName, input }));
       },
     },
   });
@@ -360,10 +372,11 @@ function createSession(projectId, cwd) {
       wake();
     },
     resolvePermission(id, approve) {
-      const resolver = pendingPermissions.get(id);
-      if (!resolver) return;
+      const pending = pendingPermissions.get(id);
+      if (!pending) return;
       pendingPermissions.delete(id);
-      resolver(approve
+      auditLog.log('permission_decision', { projectId, tool: pending.name, approve });
+      pending.resolve(approve
         ? { behavior: 'allow' }
         : { behavior: 'deny', message: 'Foydalanuvchi telefon orqali ruxsat bermadi.' });
     },
@@ -422,8 +435,8 @@ function createSession(projectId, cwd) {
   return session;
 }
 
-function getOrCreateSession(projectId, cwd) {
-  return sessions.get(projectId) || createSession(projectId, cwd);
+function getOrCreateSession(projectId, cwd, description) {
+  return sessions.get(projectId) || createSession(projectId, cwd, description);
 }
 
 // Drops the in-memory conversation AND its persisted sdkSessionId, so the
@@ -444,6 +457,10 @@ function resetSession(projectId) {
     sessions.delete(projectId);
   }
   clearSessionMeta(projectId);
+  // Umumiy voqea nomi — "chatni tozalash" va "loyihani o'chirish" ikkalasi
+  // ham buni chaqiradi, ular index.js darajasida o'zlarining aniqroq
+  // ('chat_cleared' / 'project_deleted') audit yozuvini alohida qo'shadi.
+  auditLog.log('session_reset', { projectId });
 }
 
 // Read-only status lookup that never creates a session - used to badge

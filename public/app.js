@@ -20,6 +20,9 @@
   const drawerTabs = document.querySelectorAll('.drawer-tab');
   const panelProjects = document.getElementById('panelProjects');
   const panelFiles = document.getElementById('panelFiles');
+  const panelBots = document.getElementById('panelBots');
+  const botListEl = document.getElementById('botList');
+  const pm2StatusBadge = document.getElementById('pm2StatusBadge');
   const panelLimit = document.getElementById('panelLimit');
   const rateLimitStats = document.getElementById('rateLimitStats');
   const usageStats = document.getElementById('usageStats');
@@ -31,6 +34,10 @@
   const addProjectForm = document.getElementById('addProjectForm');
   const newProjectPathInput = document.getElementById('newProjectPath');
   const newProjectToggle = document.getElementById('newProjectToggle');
+  const newProjectMetaToggle = document.getElementById('newProjectMetaToggle');
+  const newProjectMetaFields = document.getElementById('newProjectMetaFields');
+  const newProjectDescriptionInput = document.getElementById('newProjectDescription');
+  const newProjectPm2NameInput = document.getElementById('newProjectPm2Name');
   const createProjectForm = document.getElementById('createProjectForm');
   const newProjectParentInput = document.getElementById('newProjectParent');
   const newProjectNameInput = document.getElementById('newProjectName');
@@ -56,6 +63,8 @@
   const composerFileInput = document.getElementById('composerFileInput');
 
   let ws = null;
+  let botPollTimer = null;
+  let activeProjectPm2Name = null;
   // Files/images picked in the composer, waiting to go out with the next
   // sent message. Images are inlined as base64 (Claude vision); other files
   // are uploaded into the active project as soon as they're picked, so only
@@ -203,22 +212,80 @@
     }
   }
 
+  // Ruxsat so'rovini texnik bo'lmagan odam ham tushunadigan qisqa jumlaga
+  // aylantiradi. Xom `input` pastda "texnik tafsilot" sifatida baribir
+  // ko'rinadi (pcmd-full) — bu shunchaki birinchi qatorni tushunarli qiladi.
+  function describeToolCall(name, input) {
+    input = input || {};
+    switch (name) {
+      case 'Bash':
+      case 'PowerShell':
+        return `Terminal buyrug'i ishga tushiriladi: ${input.command || input.description || '(noma\'lum)'}`;
+      case 'Edit': {
+        const fname = (input.file_path || '').split(/[\\/]/).pop() || input.file_path || 'fayl';
+        return `"${fname}" faylida o'zgartirish kiritiladi`;
+      }
+      case 'Write': {
+        const fname = (input.file_path || '').split(/[\\/]/).pop() || input.file_path || 'fayl';
+        return `"${fname}" fayli yaratiladi/qayta yoziladi`;
+      }
+      case 'NotebookEdit':
+        return `"${input.notebook_path || 'notebook'}" tahrirlanadi`;
+      case 'WebFetch':
+        return `Veb-sahifa ochiladi: ${input.url || ''}`;
+      case 'WebSearch':
+        return `Internetdan qidiriladi: ${input.query || ''}`;
+      default:
+        return null;
+    }
+  }
+
+  // Oddiy, kutubxonasiz qatorma-qator diff (Edit tool uchun old_string/
+  // new_string). Katta o'zgarishlarda to'liq algoritm emas — faqat
+  // qaysi qatorlar olib tashlangan/qo'shilganini vizual ko'rsatadi.
+  function renderLineDiff(oldStr, newStr) {
+    const oldLines = String(oldStr || '').split('\n');
+    const newLines = String(newStr || '').split('\n');
+    const wrap = document.createElement('div');
+    wrap.className = 'diff-view';
+    for (const line of oldLines) {
+      const row = document.createElement('div');
+      row.className = 'diff-line diff-del';
+      row.textContent = '- ' + line;
+      wrap.appendChild(row);
+    }
+    for (const line of newLines) {
+      const row = document.createElement('div');
+      row.className = 'diff-line diff-add';
+      row.textContent = '+ ' + line;
+      wrap.appendChild(row);
+    }
+    return wrap;
+  }
+
   function addPermissionCard(reqId, name, input) {
     const card = document.createElement('div');
     card.className = 'permission-card';
     const summary = toolSummary(name, input) || '';
+    const friendly = describeToolCall(name, input);
     const PREVIEW_LEN = 70;
     const isLong = summary.length > PREVIEW_LEN;
     const short = isLong ? summary.slice(0, PREVIEW_LEN) + '…' : summary;
     card.innerHTML = `
       <div class="ptitle">ruxsat kerak <span class="ptag">[${escapeHtml(name)}]</span></div>
+      ${friendly ? `<div class="pfriendly"></div>` : ''}
       <div class="pcmd-preview"><code>${escapeHtml(short)}</code></div>
-      ${isLong ? `<button type="button" class="pcmd-toggle">to'liq ko'rish</button>
+      ${isLong ? `<button type="button" class="pcmd-toggle">texnik tafsilot</button>
       <pre class="pcmd-full hidden"><code>${escapeHtml(summary).slice(0, 2000)}</code></pre>` : ''}
+      <div class="permission-diff-slot"></div>
       <div class="permission-actions">
         <button class="allow">Ruxsat berish</button>
         <button class="deny">Rad etish</button>
       </div>`;
+    if (friendly) card.querySelector('.pfriendly').textContent = friendly;
+    if (name === 'Edit' && input && typeof input.old_string === 'string' && typeof input.new_string === 'string') {
+      card.querySelector('.permission-diff-slot').appendChild(renderLineDiff(input.old_string, input.new_string));
+    }
     if (isLong) {
       const toggle = card.querySelector('.pcmd-toggle');
       const preview = card.querySelector('.pcmd-preview');
@@ -227,7 +294,7 @@
         const willShow = full.classList.contains('hidden');
         full.classList.toggle('hidden');
         preview.classList.toggle('hidden', willShow);
-        toggle.textContent = willShow ? 'yashirish' : 'to\'liq ko\'rish';
+        toggle.textContent = willShow ? 'yashirish' : 'texnik tafsilot';
       });
     }
     const allowBtn = card.querySelector('.allow');
@@ -387,6 +454,8 @@
         syncActiveProjectFromCwd(msg.cwd);
         setActiveMode(msg.permissionMode || 'default');
         setUsage(msg.usage);
+        activeProjectPm2Name = msg.pm2Name || null;
+        if (activeProjectPm2Name) loadBotList(); else pm2StatusBadge.classList.add('hidden');
         messagesEl.innerHTML = '';
         hideTyping();
         for (const evt of msg.history || []) handleMessage(evt, true);
@@ -506,6 +575,8 @@
   });
 
   clearChatBtn.addEventListener('click', () => {
+    const ok = confirm("Suhbat tarixi butunlay o'chadi, qaytarib bo'lmaydi. Davom etasizmi?");
+    if (!ok) return;
     send({ type: 'clear_chat' });
   });
 
@@ -801,9 +872,11 @@
       const tab = btn.dataset.tab;
       panelProjects.classList.toggle('hidden', tab !== 'projects');
       panelFiles.classList.toggle('hidden', tab !== 'files');
+      panelBots.classList.toggle('hidden', tab !== 'bots');
       panelLimit.classList.toggle('hidden', tab !== 'limit');
       panelFolders.classList.toggle('hidden', tab !== 'folders');
       if (tab === 'files') { currentDir = '.'; loadFiles(); }
+      if (tab === 'bots') { loadBotList(); startBotPolling(); } else { stopBotPolling(); }
       if (tab === 'limit') {
         renderUsagePanel();
         renderRateLimits();
@@ -866,6 +939,8 @@
       delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12"/><path d="M10 11v6M14 11v6"/></svg>';
       delBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        const ok = confirm(`"${p.label}" loyihasini ro'yxatdan o'chirmoqchimisiz?\n\nFayllar va PM2'dagi tegishli bot/xizmat O'ZGARMAYDI — faqat shu ro'yxatdan va chat tarixi o'chadi.`);
+        if (!ok) return;
         await fetch(`/api/projects/${encodeURIComponent(p.id)}`, { method: 'DELETE' });
         fetchProjects();
       });
@@ -901,6 +976,10 @@
     }
   }
 
+  newProjectMetaToggle.addEventListener('click', () => {
+    newProjectMetaFields.classList.toggle('hidden');
+  });
+
   addProjectForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const pathVal = newProjectPathInput.value.trim();
@@ -909,11 +988,18 @@
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: pathVal }),
+        body: JSON.stringify({
+          path: pathVal,
+          description: newProjectDescriptionInput.value.trim(),
+          pm2Name: newProjectPm2NameInput.value.trim(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) { addSystemNote('⚠️ ' + (data.error || 'Xatolik')); return; }
       newProjectPathInput.value = '';
+      newProjectDescriptionInput.value = '';
+      newProjectPm2NameInput.value = '';
+      newProjectMetaFields.classList.add('hidden');
       await fetchProjects();
       selectProject(data.project);
     } catch {
@@ -939,11 +1025,19 @@
       const res = await fetch('/api/projects/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent, name }),
+        body: JSON.stringify({
+          parent,
+          name,
+          description: newProjectDescriptionInput.value.trim(),
+          pm2Name: newProjectPm2NameInput.value.trim(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) { addSystemNote('⚠️ ' + (data.error || 'Xatolik')); return; }
       newProjectNameInput.value = '';
+      newProjectDescriptionInput.value = '';
+      newProjectPm2NameInput.value = '';
+      newProjectMetaFields.classList.add('hidden');
       createProjectForm.classList.add('hidden');
       await fetchProjects();
       selectProject(data.project);
@@ -1145,6 +1239,26 @@
     }
   }
 
+  function highlightFileContent(relPath) {
+    if (!window.hljs) return;
+    fileViewerContent.className = 'file-viewer-content';
+    try {
+      const ext = (relPath.split('.').pop() || '').toLowerCase();
+      const langMap = {
+        js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+        py: 'python', json: 'json', sh: 'bash', bash: 'bash', yml: 'yaml', yaml: 'yaml', md: 'markdown',
+        html: 'xml', xml: 'xml', css: 'css', sql: 'sql', php: 'php', conf: 'nginx', nginx: 'nginx', env: 'bash',
+      };
+      const lang = langMap[ext];
+      if (lang && window.hljs.getLanguage(lang)) {
+        const result = window.hljs.highlight(fileViewerContent.textContent, { language: lang });
+        fileViewerContent.innerHTML = result.value;
+      } else {
+        window.hljs.highlightElement(fileViewerContent);
+      }
+    } catch { /* highlight ixtiyoriy — muvaffaqiyatsiz bo'lsa oddiy matn qoladi */ }
+  }
+
   async function openFile(relPath) {
     currentFilePath = relPath;
     currentFileEditable = false;
@@ -1165,6 +1279,7 @@
         fileViewerContent.textContent = data.content;
         currentFileEditable = true;
         fileEditBtn.classList.remove('hidden');
+        highlightFileContent(relPath);
       }
     } catch {
       fileViewerContent.textContent = "Serverga ulanib bo'lmadi";
@@ -1197,6 +1312,7 @@
       if (!res.ok) { addSystemNote('⚠️ ' + (data.error || "Saqlanmadi")); return; }
       fileViewerContent.textContent = fileViewerEditor.value;
       setFileEditMode(false);
+      highlightFileContent(currentFilePath);
     } catch {
       addSystemNote("⚠️ Serverga ulanib bo'lmadi");
     } finally {
@@ -1220,6 +1336,131 @@
   // o'zgarmaydi, faqat fayl ko'rinishi almashadi.
 
   const FOLDER_BOOKMARKS_KEY = 'rootwebFolderBookmarks';
+
+  // ---------------- botlar (PM2) ----------------
+
+  const PM2_STATUS_LABEL = { online: 'ishlayapti', stopped: "to'xtatilgan", errored: 'xato', stopping: "to'xtamoqda", launching: 'ishga tushmoqda' };
+
+  function formatUptime(ts) {
+    if (!ts) return '';
+    const sec = Math.floor((Date.now() - ts) / 1000);
+    if (sec < 60) return `${sec}s`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}d`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)}s`;
+    return `${Math.floor(sec / 86400)}kun`;
+  }
+
+  function formatMem(bytes) {
+    if (!bytes) return '0M';
+    return (bytes / 1024 / 1024).toFixed(0) + 'M';
+  }
+
+  async function loadBotList() {
+    try {
+      const res = await fetch('/api/pm2/list');
+      const data = await res.json();
+      if (!res.ok) { botListEl.innerHTML = `<div class="empty-hint">⚠️ ${escapeHtml(data.error || 'Xatolik')}</div>`; return; }
+      renderBotList(data.processes || []);
+      updatePm2Badge(data.processes || []);
+    } catch {
+      botListEl.innerHTML = '<div class="empty-hint">Serverga ulanib bo\'lmadi</div>';
+    }
+  }
+
+  function startBotPolling() {
+    stopBotPolling();
+    botPollTimer = setInterval(loadBotList, 12000);
+  }
+
+  function stopBotPolling() {
+    if (botPollTimer) { clearInterval(botPollTimer); botPollTimer = null; }
+  }
+
+  function renderBotList(processes) {
+    botListEl.innerHTML = '';
+    if (!processes.length) {
+      botListEl.innerHTML = '<div class="empty-hint">PM2 jarayoni topilmadi.</div>';
+      return;
+    }
+    for (const p of processes) {
+      const row = document.createElement('div');
+      row.className = 'bot-row';
+      const statusClass = p.status === 'online' ? 'ok' : (p.status === 'errored' ? 'error' : 'warn');
+      row.innerHTML = `
+        <div class="bot-main">
+          <span class="bot-dot ${statusClass}"></span>
+          <span class="bot-name"></span>
+          <span class="bot-ns"></span>
+        </div>
+        <div class="bot-meta">
+          <span>${escapeHtml(PM2_STATUS_LABEL[p.status] || p.status || '?')}</span>
+          <span>CPU ${p.cpu ?? 0}%</span>
+          <span>${formatMem(p.memory)}</span>
+          <span>↻ ${p.restarts ?? 0}</span>
+          <span>${formatUptime(p.uptime)}</span>
+        </div>
+        <div class="bot-actions">
+          <button type="button" class="bot-logs-btn" title="Loglar">loglar</button>
+          <button type="button" class="bot-restart-btn" title="Restart">restart</button>
+          <button type="button" class="bot-stop-btn" title="To'xtatish">to'xtatish</button>
+        </div>`;
+      row.querySelector('.bot-name').textContent = p.name;
+      row.querySelector('.bot-ns').textContent = p.namespace && p.namespace !== 'default' ? `(${p.namespace})` : '';
+      row.querySelector('.bot-restart-btn').addEventListener('click', async () => {
+        if (!confirm(`"${p.name}" qayta ishga tushiriladi (bir necha soniyaga to'xtaydi). Davom etasizmi?`)) return;
+        await pm2Action(p.name, 'restart');
+      });
+      row.querySelector('.bot-stop-btn').addEventListener('click', async () => {
+        if (!confirm(`"${p.name}" TO'XTATILADI va qo'lda qayta ishga tushirmaguningizcha ishlamaydi. Davom etasizmi?`)) return;
+        await pm2Action(p.name, 'stop');
+      });
+      row.querySelector('.bot-logs-btn').addEventListener('click', () => showBotLogs(p.name));
+      botListEl.appendChild(row);
+    }
+  }
+
+  async function pm2Action(name, action) {
+    try {
+      const res = await fetch(`/api/pm2/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { addSystemNote('⚠️ ' + (data.error || 'Xatolik')); return; }
+      loadBotList();
+    } catch {
+      addSystemNote("⚠️ Serverga ulanib bo'lmadi");
+    }
+  }
+
+  async function showBotLogs(name) {
+    fileViewerName.textContent = `${name} — loglar`;
+    fileDownloadBtn.removeAttribute('href');
+    fileEditBtn.classList.add('hidden');
+    fileViewerContent.className = 'file-viewer-content';
+    fileViewerContent.textContent = 'Yuklanmoqda...';
+    currentFileEditable = false;
+    setFileEditMode(false);
+    fileViewer.classList.add('open');
+    fileViewerOverlay.classList.remove('hidden');
+    requestAnimationFrame(() => fileViewerOverlay.classList.add('show'));
+    try {
+      const res = await fetch(`/api/pm2/${encodeURIComponent(name)}/logs?lines=100`);
+      const data = await res.json();
+      fileViewerContent.textContent = res.ok ? (data.logs || '(bo\'sh)') : ('⚠️ ' + (data.error || 'Xatolik'));
+    } catch {
+      fileViewerContent.textContent = "Serverga ulanib bo'lmadi";
+    }
+  }
+
+  // Faol loyihaga bog'liq PM2 nomi bo'lsa, topbar'da kichik status-nuqta
+  // ko'rsatiladi (masalan @avtopost3_bot bilan ishlayotganda uning holati
+  // bir qarashda ko'rinadi, "botlar" panelini alohida ochmasdan).
+  function updatePm2Badge(processes) {
+    if (!activeProjectPm2Name) { pm2StatusBadge.classList.add('hidden'); return; }
+    const match = processes.find((p) => p.name === activeProjectPm2Name);
+    if (!match) { pm2StatusBadge.classList.add('hidden'); return; }
+    pm2StatusBadge.classList.remove('hidden');
+    pm2StatusBadge.textContent = `${activeProjectPm2Name}: ${PM2_STATUS_LABEL[match.status] || match.status}`;
+    pm2StatusBadge.classList.toggle('bad', match.status !== 'online');
+  }
 
   function genId() {
     if (window.crypto && crypto.randomUUID) {

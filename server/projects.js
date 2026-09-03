@@ -33,11 +33,16 @@ function seed(absPath, label) {
   const resolved = path.resolve(absPath);
   const items = load();
   if (items.find((p) => p.path === resolved)) return;
-  items.push({ id: crypto.randomUUID(), path: resolved, label: label || path.basename(resolved), lastUsed: Date.now() });
+  items.push({ id: crypto.randomUUID(), path: resolved, label: label || path.basename(resolved), description: '', pm2Name: '', lastUsed: Date.now() });
   save(items);
 }
 
-function upsert(rawPath, label) {
+// `description` — Claude'ga har safar yangi sessiya boshlanganda avtomatik
+// uzatiladigan qisqa kontekst (masalan "poster-02, @avtopost3_bot, ..."),
+// `pm2Name` — shu loyihaga bog'liq PM2 process nomi (bo'lsa, "botlar"
+// panelida loyiha bilan bog'lab status ko'rsatish uchun). Ikkisi ham
+// ixtiyoriy — bo'sh qoldirilsa avvalgi xatti-harakat o'zgarmaydi.
+function upsert(rawPath, label, description, pm2Name) {
   const resolved = path.resolve(rawPath);
   const stat = fs.statSync(resolved);
   if (!stat.isDirectory()) throw new Error("Bu yo'l papka emas");
@@ -47,8 +52,17 @@ function upsert(rawPath, label) {
   if (entry) {
     entry.lastUsed = Date.now();
     if (label) entry.label = label;
+    if (typeof description === 'string') entry.description = description;
+    if (typeof pm2Name === 'string') entry.pm2Name = pm2Name;
   } else {
-    entry = { id: crypto.randomUUID(), path: resolved, label: label || path.basename(resolved), lastUsed: Date.now() };
+    entry = {
+      id: crypto.randomUUID(),
+      path: resolved,
+      label: label || path.basename(resolved),
+      description: typeof description === 'string' ? description : '',
+      pm2Name: typeof pm2Name === 'string' ? pm2Name : '',
+      lastUsed: Date.now(),
+    };
     items.push(entry);
   }
   save(items);
@@ -59,7 +73,7 @@ const INVALID_NAME_CHARS = /[\\/:*?"<>|]/;
 
 // Creates `name` as a fresh subfolder of `parentPath` (idempotent if it
 // already exists as a directory) and registers it as a project.
-function createAndAdd(parentPath, name, label) {
+function createAndAdd(parentPath, name, label, description, pm2Name) {
   if (!name || INVALID_NAME_CHARS.test(name) || name === '.' || name === '..') {
     throw new Error("Papka nomi noto'g'ri (\\ / : * ? \" < > | yoki .. bo'lmasin)");
   }
@@ -73,7 +87,7 @@ function createAndAdd(parentPath, name, label) {
   } else {
     fs.mkdirSync(target, { recursive: true });
   }
-  return upsert(target, label || name);
+  return upsert(target, label || name, description, pm2Name);
 }
 
 function touch(id) {

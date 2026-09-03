@@ -25,6 +25,8 @@ const projects = require('./projects');
 const fileApi = require('./fileApi');
 const sessionManager = require('./sessionManager');
 const authManager = require('./authManager');
+const pm2Manager = require('./pm2Manager');
+const auditLog = require('./auditLog');
 
 const PORT = process.env.PORT || 3210;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -103,11 +105,13 @@ function isAuthed(req) {
 app.post('/api/login', (req, res) => {
   const password = req.body && req.body.password;
   if (typeof password !== 'string' || !APP_PASSWORDS.some((p) => timingSafeEqualStr(password, p))) {
+    auditLog.log('login_failed', { ip: req.ip });
     return res.status(401).json({ error: "Parol noto'g'ri" });
   }
   const token = sign('ok');
   const secure = req.secure ? '; Secure' : '';
   res.setHeader('Set-Cookie', `session=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax${secure}`);
+  auditLog.log('login_success', { ip: req.ip });
   res.json({ ok: true });
 });
 
@@ -151,12 +155,17 @@ app.get('/api/projects', (req, res) => {
 });
 
 app.post('/api/projects', (req, res) => {
-  const { path: rawPath, label } = req.body || {};
+  const { path: rawPath, label, description, pm2Name } = req.body || {};
   if (typeof rawPath !== 'string' || !rawPath.trim()) {
     return res.status(400).json({ error: "Papka yo'li kiritilmagan" });
   }
   try {
-    const entry = projects.upsert(rawPath.trim(), typeof label === 'string' ? label.trim() : undefined);
+    const entry = projects.upsert(
+      rawPath.trim(),
+      typeof label === 'string' ? label.trim() : undefined,
+      typeof description === 'string' ? description : undefined,
+      typeof pm2Name === 'string' ? pm2Name.trim() : undefined,
+    );
     res.json({ project: entry });
   } catch (err) {
     res.status(400).json({ error: err.code === 'ENOENT' ? 'Bunday papka topilmadi' : err.message });
@@ -164,7 +173,7 @@ app.post('/api/projects', (req, res) => {
 });
 
 app.post('/api/projects/create', (req, res) => {
-  const { parent, name, label } = req.body || {};
+  const { parent, name, label, description, pm2Name } = req.body || {};
   if (typeof parent !== 'string' || !parent.trim()) {
     return res.status(400).json({ error: "Ota papka yo'li kiritilmagan" });
   }
@@ -172,7 +181,32 @@ app.post('/api/projects/create', (req, res) => {
     return res.status(400).json({ error: "Yangi papka nomi kiritilmagan" });
   }
   try {
-    const entry = projects.createAndAdd(parent.trim(), name.trim(), typeof label === 'string' ? label.trim() : undefined);
+    const entry = projects.createAndAdd(
+      parent.trim(),
+      name.trim(),
+      typeof label === 'string' ? label.trim() : undefined,
+      typeof description === 'string' ? description : undefined,
+      typeof pm2Name === 'string' ? pm2Name.trim() : undefined,
+    );
+    res.json({ project: entry });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Loyihaning `description`/`pm2Name`ini keyinroq tahrirlash uchun (yaratishda
+// kiritilmagan bo'lsa ham qo'shib qo'yish imkoni).
+app.patch('/api/projects/:id', (req, res) => {
+  const project = projects.getById(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Loyiha topilmadi' });
+  const { label, description, pm2Name } = req.body || {};
+  try {
+    const entry = projects.upsert(
+      project.path,
+      typeof label === 'string' ? label.trim() : undefined,
+      typeof description === 'string' ? description : undefined,
+      typeof pm2Name === 'string' ? pm2Name.trim() : undefined,
+    );
     res.json({ project: entry });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -183,14 +217,64 @@ app.delete('/api/projects/:id', (req, res) => {
   if (projects.list().length <= 1) {
     return res.status(400).json({ error: "Oxirgi loyihani o'chirib bo'lmaydi" });
   }
+  const project = projects.getById(req.params.id);
   // Loyiha ro'yxatdan o'chishidan OLDIN uning faol Claude sessiyasini (agar
   // bo'lsa) to'liq yopamiz — aks holda ro'yxatdan yo'qolgan, lekin hali
   // ishlab turgan `claude` subprocess RAM'da abadiy "zombi" bo'lib qoladi
   // (xuddi "chatni tozalash" tugmasidagi avvalgi bag' kabi — bu yerda ham
   // sessionManager.resetSession() chaqirilmasa xuddi shu muammo takrorlanadi).
+  //
+  // MUHIM: bu faqat rootweb'ning "loyihalar" ro'yxatidan (papka-yorlig'i +
+  // chat) o'chirish — PM2'dagi tegishli botga/xizmatga HECH QANDAY ta'sir
+  // qilmaydi, fayllar ham diskda qoladi.
   sessionManager.resetSession(req.params.id);
   projects.remove(req.params.id);
+  auditLog.log('project_deleted', { projectId: req.params.id, label: project && project.label, path: project && project.path });
   res.json({ ok: true });
+});
+
+// ---------------- PM2 (botlar) ----------------
+
+app.get('/api/pm2/list', async (req, res) => {
+  try {
+    res.json({ processes: await pm2Manager.list() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/pm2/:name/restart', async (req, res) => {
+  try {
+    await pm2Manager.restart(req.params.name);
+    auditLog.log('pm2_restart', { name: req.params.name });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/pm2/:name/stop', async (req, res) => {
+  try {
+    await pm2Manager.stop(req.params.name);
+    auditLog.log('pm2_stop', { name: req.params.name });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/pm2/:name/logs', async (req, res) => {
+  try {
+    res.json({ logs: await pm2Manager.logs(req.params.name, req.query.lines) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ---------------- audit log (faqat o'qish) ----------------
+
+app.get('/api/audit', (req, res) => {
+  res.json({ events: auditLog.readRecent(req.query.limit) });
 });
 
 // Fayllar API'si loyiha (`projectId`) YOKI to'g'ridan-to'g'ri absolyut yo'l
@@ -380,7 +464,7 @@ async function handleConnection(ws) {
   // history so the client can rebuild the conversation it left off at.
   function attachToProject(project) {
     if (currentSession) currentSession.detach(ws);
-    currentSession = sessionManager.getOrCreateSession(project.id, project.path);
+    currentSession = sessionManager.getOrCreateSession(project.id, project.path, project.description);
     currentSession.attach(ws);
     const snap = currentSession.snapshot();
     safeSend({
@@ -391,6 +475,7 @@ async function handleConnection(ws) {
       permissionMode: snap.permissionMode,
       usage: snap.usage,
       history: snap.history,
+      pm2Name: project.pm2Name || null,
     });
   }
 
@@ -430,6 +515,7 @@ async function handleConnection(ws) {
       const project = projects.getById(currentSession.projectId);
       if (project) {
         sessionManager.resetSession(project.id);
+        auditLog.log('chat_cleared', { projectId: project.id, label: project.label });
         attachToProject(project);
       }
     } else if (msg.type === 'set_permission_mode' && typeof msg.mode === 'string') {

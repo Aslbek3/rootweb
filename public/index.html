@@ -9,6 +9,10 @@
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#262624">
 <link rel="apple-touch-icon" href="/icon.svg">
+<!-- Fayl ko'ruvchidagi syntax highlighting uchun (faqat READ rejimida, muharrir
+     hali oddiy textarea) — CDN orqali, npm bog'liqligiga aylantirilmagan. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -17,6 +21,7 @@
         <span class="status-dot" id="statusDot"></span>
         <span class="tl-name">Claude Code</span>
         <span class="cwd" id="cwdLabel">—</span>
+        <span class="pm2-badge hidden" id="pm2StatusBadge"></span>
       </div>
       <div class="tl-actions">
         <button class="icon-btn" id="clearChatBtn" title="Chatni tozalash" aria-label="Chatni tozalash">
@@ -75,6 +80,7 @@
       <div class="drawer-tabs">
         <button type="button" class="drawer-tab active" data-tab="projects">loyihalar</button>
         <button type="button" class="drawer-tab" data-tab="files">fayllar</button>
+        <button type="button" class="drawer-tab" data-tab="bots">botlar</button>
         <button type="button" class="drawer-tab" data-tab="limit">limit</button>
         <button type="button" class="drawer-tab" data-tab="folders">papkalar</button>
       </div>
@@ -88,6 +94,11 @@
         <input type="text" id="newProjectPath" placeholder="mavjud papka yo'li" required>
         <button type="submit" title="Qo'shish">+</button>
       </form>
+      <button type="button" id="newProjectMetaToggle" class="new-project-toggle">+ kontekst / PM2 nomi (ixtiyoriy)</button>
+      <div id="newProjectMetaFields" class="create-project-form hidden">
+        <textarea id="newProjectDescription" placeholder="Loyiha haqida qisqa kontekst — Claude har safar suhbat boshlanganda avtomatik biladi (masalan: poster-02, @avtopost3_bot, sodda versiya)" rows="2"></textarea>
+        <input type="text" id="newProjectPm2Name" placeholder="PM2 process nomi (masalan poster-02), botlar panelida bog'lash uchun">
+      </div>
 
       <button type="button" id="newProjectToggle" class="new-project-toggle">+ yangi loyiha papkasi yaratish</button>
       <form id="createProjectForm" class="create-project-form hidden">
@@ -116,6 +127,11 @@
         <button type="submit">yarat</button>
       </form>
       <div id="fileTree" class="file-tree"></div>
+    </div>
+
+    <div class="drawer-panel hidden" id="panelBots">
+      <div class="empty-hint">PM2'dagi jarayonlar — holat, CPU/RAM, qayta ishga tushirish soni. Har 12 soniyada avtomatik yangilanadi.</div>
+      <div id="botList" class="bot-list"></div>
     </div>
 
     <div class="drawer-panel hidden" id="panelLimit">
