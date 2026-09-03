@@ -20,6 +20,7 @@ function listDir(root, rel) {
   const dirents = fs.readdirSync(dirPath, { withFileTypes: true });
   return dirents
     .filter((d) => !(d.isDirectory() && IGNORE_DIRS.has(d.name)))
+    .filter((d) => !d.name.startsWith('.'))
     .map((d) => {
       const type = d.isDirectory() ? 'dir' : 'file';
       let size = 0;

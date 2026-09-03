@@ -1470,7 +1470,15 @@
   }
 
   function loadFolderBookmarks() {
-    try { folderBookmarks = JSON.parse(localStorage.getItem(FOLDER_BOOKMARKS_KEY) || '[]'); }
+    const raw = localStorage.getItem(FOLDER_BOOKMARKS_KEY);
+    if (raw === null) {
+      // Birinchi marta ochilganda "/root"ga tezkor sakrash uchun standart
+      // yorliq bilan boshlanadi (loyiha almashtirmasdan istalgan joydan).
+      folderBookmarks = [{ id: genId(), label: 'root', path: '/root' }];
+      saveFolderBookmarks();
+      return;
+    }
+    try { folderBookmarks = JSON.parse(raw || '[]'); }
     catch { folderBookmarks = []; }
   }
 
