@@ -1471,15 +1471,16 @@
 
   function loadFolderBookmarks() {
     const raw = localStorage.getItem(FOLDER_BOOKMARKS_KEY);
-    if (raw === null) {
-      // Birinchi marta ochilganda "/root"ga tezkor sakrash uchun standart
-      // yorliq bilan boshlanadi (loyiha almashtirmasdan istalgan joydan).
-      folderBookmarks = [{ id: genId(), label: 'root', path: '/root' }];
-      saveFolderBookmarks();
-      return;
-    }
     try { folderBookmarks = JSON.parse(raw || '[]'); }
     catch { folderBookmarks = []; }
+    // "/root"ga tezkor sakrash uchun standart yorliq — ro'yxat bo'sh bo'lgan
+    // har safar (hali umuman saqlanmagan YOKI avval bo'shatib qo'yilgan)
+    // qayta qo'shiladi, shunda loyiha almashtirmasdan istalgan joydan kirish
+    // doim mavjud bo'ladi.
+    if (!folderBookmarks.length) {
+      folderBookmarks = [{ id: genId(), label: 'root', path: '/root' }];
+      saveFolderBookmarks();
+    }
   }
 
   function saveFolderBookmarks() {
