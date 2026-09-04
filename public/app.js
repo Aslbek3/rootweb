@@ -26,11 +26,6 @@
   const panelLimit = document.getElementById('panelLimit');
   const rateLimitStats = document.getElementById('rateLimitStats');
   const usageStats = document.getElementById('usageStats');
-  const panelFolders = document.getElementById('panelFolders');
-  const addFolderForm = document.getElementById('addFolderForm');
-  const newFolderLabelInput = document.getElementById('newFolderLabel');
-  const newFolderPathInput = document.getElementById('newFolderPath');
-  const folderBookmarkListEl = document.getElementById('folderBookmarkList');
   const addProjectForm = document.getElementById('addProjectForm');
   const newProjectPathInput = document.getElementById('newProjectPath');
   const newProjectToggle = document.getElementById('newProjectToggle');
@@ -85,7 +80,6 @@
   let lastCwd = '';
   let isSwitching = false;
   let prevPending = new Map();
-  let folderBookmarks = [];
   let currentFilePath = null;
   let currentFileEditable = false;
 
@@ -875,7 +869,6 @@
       panelFiles.classList.toggle('hidden', tab !== 'files');
       panelBots.classList.toggle('hidden', tab !== 'bots');
       panelLimit.classList.toggle('hidden', tab !== 'limit');
-      panelFolders.classList.toggle('hidden', tab !== 'folders');
       if (tab === 'files') { currentDir = '.'; loadFiles(); }
       if (tab === 'bots') { loadBotList(); startBotPolling(); } else { stopBotPolling(); }
       if (tab === 'limit') {
@@ -883,7 +876,6 @@
         renderRateLimits();
         send({ type: 'get_rate_limits' });
       }
-      if (tab === 'folders') { loadFolderBookmarks(); renderFolderBookmarkList(); }
     });
   });
 
@@ -1336,14 +1328,6 @@
   fileViewerCloseBtn.addEventListener('click', closeFileViewer);
   fileViewerOverlay.addEventListener('click', closeFileViewer);
 
-  // ---------------- papkalar (folder-yorliqlar) ----------------
-  // Absolyut VPS yo'llarini localStorage'da yorliq sifatida saqlaydi.
-  // Bosilganda fayllar panelini o'sha papkaga sakratadi (browseRoot orqali) —
-  // switch_project YUBORILMAYDI, ya'ni Claude'ning faol loyiha/suhbati
-  // o'zgarmaydi, faqat fayl ko'rinishi almashadi.
-
-  const FOLDER_BOOKMARKS_KEY = 'rootwebFolderBookmarks';
-
   // ---------------- botlar (PM2) ----------------
 
   const PM2_STATUS_LABEL = { online: 'ishlayapti', stopped: "to'xtatilgan", errored: 'xato', stopping: "to'xtamoqda", launching: 'ishga tushmoqda' };
@@ -1468,78 +1452,6 @@
     pm2StatusBadge.textContent = `${activeProjectPm2Name}: ${PM2_STATUS_LABEL[match.status] || match.status}`;
     pm2StatusBadge.classList.toggle('bad', match.status !== 'online');
   }
-
-  function genId() {
-    if (window.crypto && crypto.randomUUID) {
-      try { return crypto.randomUUID(); } catch { /* insecure context (plain http) - fall through */ }
-    }
-    return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  }
-
-  function loadFolderBookmarks() {
-    try { folderBookmarks = JSON.parse(localStorage.getItem(FOLDER_BOOKMARKS_KEY) || '[]'); }
-    catch { folderBookmarks = []; }
-  }
-
-  function saveFolderBookmarks() {
-    localStorage.setItem(FOLDER_BOOKMARKS_KEY, JSON.stringify(folderBookmarks));
-  }
-
-  function renderFolderBookmarkList() {
-    folderBookmarkListEl.innerHTML = '';
-    if (!folderBookmarks.length) {
-      folderBookmarkListEl.innerHTML = '<div class="empty-hint">Hali papka yorlig\'i qo\'shilmagan.</div>';
-      return;
-    }
-    for (const bookmark of folderBookmarks) {
-      const row = document.createElement('div');
-      row.className = 'project-row';
-      const info = document.createElement('div');
-      info.className = 'project-info';
-      info.innerHTML = '<div class="project-label"><span class="project-label-text"></span></div><div class="project-path"></div>';
-      info.querySelector('.project-label-text').textContent = bookmark.label || bookmark.path;
-      info.querySelector('.project-path').textContent = bookmark.path;
-      info.addEventListener('click', () => {
-        browseRoot = bookmark.path;
-        currentDir = '.';
-        drawerTabs.forEach((b) => b.classList.toggle('active', b.dataset.tab === 'files'));
-        panelProjects.classList.add('hidden');
-        panelFiles.classList.remove('hidden');
-        panelBots.classList.add('hidden');
-        panelLimit.classList.add('hidden');
-        panelFolders.classList.add('hidden');
-        stopBotPolling();
-        loadFiles();
-        closeDrawer();
-      });
-      const delBtn = document.createElement('button');
-      delBtn.className = 'icon-btn project-del';
-      delBtn.title = "O'chirish";
-      delBtn.setAttribute('aria-label', "O'chirish");
-      delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12"/><path d="M10 11v6M14 11v6"/></svg>';
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        folderBookmarks = folderBookmarks.filter((x) => x.id !== bookmark.id);
-        saveFolderBookmarks();
-        renderFolderBookmarkList();
-      });
-      row.appendChild(info);
-      row.appendChild(delBtn);
-      folderBookmarkListEl.appendChild(row);
-    }
-  }
-
-  addFolderForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const label = newFolderLabelInput.value.trim();
-    const folderPath = newFolderPathInput.value.trim();
-    if (!folderPath.startsWith('/')) { addSystemNote("⚠️ Yo'l absolyut bo'lishi kerak (/ bilan boshlansin)"); return; }
-    folderBookmarks.push({ id: genId(), label, path: folderPath });
-    saveFolderBookmarks();
-    newFolderLabelInput.value = '';
-    newFolderPathInput.value = '';
-    renderFolderBookmarkList();
-  });
 
   fetchProjects();
   setInterval(fetchProjects, 5000);

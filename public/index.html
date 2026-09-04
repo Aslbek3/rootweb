@@ -82,7 +82,6 @@
         <button type="button" class="drawer-tab" data-tab="files">fayllar</button>
         <button type="button" class="drawer-tab" data-tab="bots">botlar</button>
         <button type="button" class="drawer-tab" data-tab="limit">limit</button>
-        <button type="button" class="drawer-tab" data-tab="folders">papkalar</button>
       </div>
       <button class="icon-btn" id="drawerCloseBtn" title="Yopish" aria-label="Yopish">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -141,16 +140,6 @@
       <div id="rateLimitStats" class="rate-limit-stats"></div>
       <div id="usageStats" class="usage-stats"></div>
       <div class="empty-hint">"Joriy sessiya" faqat server ishga tushirilgandan beri hisoblanadi (server qayta ishga tushirilsa nolga qaytadi). 5-soatlik/haftalik limit — Claude hisobingizning haqiqiy holati.</div>
-    </div>
-
-    <div class="drawer-panel hidden" id="panelFolders">
-      <div class="empty-hint">VPS'dagi istalgan absolyut yo'lni yorliq sifatida saqlang — bosilganda fayllar paneli to'g'ridan-to'g'ri o'sha papkaga o'tadi (faol Claude suhbati o'zgarmaydi).</div>
-      <form id="addFolderForm" class="create-project-form">
-        <input type="text" id="newFolderLabel" placeholder="nomi, masalan Nginx configs">
-        <input type="text" id="newFolderPath" placeholder="/etc/nginx" required>
-        <button type="submit">qo'shish</button>
-      </form>
-      <div id="folderBookmarkList" class="project-list"></div>
     </div>
   </aside>
 
