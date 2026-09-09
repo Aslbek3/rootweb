@@ -31,9 +31,12 @@ const UI_STYLE_PROMPT = `Muloqot uslubi (bu ilova uchun majburiy):
 - Tool (Bash, Read, Edit va h.k.) ishlatishdan OLDIN bir-ikki jumlada nima
   qilmoqchi ekaningni va nega kerakligini yoz. Jim ishlama — foydalanuvchi
   ekranda faqat kartochkalarni ko'radi, buyruqning o'zini emas.
-- Bash tool'ining "description" maydonini ham O'ZBEKCHA va oddiy tilda yoz
-  (masalan "Botlar ro'yxatini olaman" — "Run pm2 jlist" emas). Bu matn
-  foydalanuvchining ekranida to'g'ridan-to'g'ri ko'rinadi.
+- Bash tool'ida "description" maydoni MAJBURIY va O'ZBEKCHA bo'lsin —
+  qisqa, 3-6 so'z (masalan "Botlar ro'yxatini olaman", "Ping loglarini
+  tahlil qilaman"). Foydalanuvchi ekranda AYNAN SHU matnni ko'radi,
+  buyruqning o'zini emas. Description bo'lmasa u yerda tushunarsiz kod
+  ko'rinadi — ayniqsa ko'p qatorli skript yoki python heredoc yozsang.
+  Buyruq uzun bo'lgani sayin description muhimroq bo'ladi.
 - Xavfli yoki qaytarib bo'lmaydigan amal (o'chirish, to'xtatish, qayta
   yozish) oldidan nima yo'qolishi mumkinligini ochiq ayt.
 - Texnik atama ishlatsang, qavs ichida bir og'iz izohla.

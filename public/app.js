@@ -352,9 +352,30 @@
     Glob: 'GLOB', WebFetch: 'WEB', WebSearch: 'SEARCH', Task: 'TASK', TodoWrite: 'TODO'
   };
 
+  // Tool kartochkasining sarlavhasi.
+  //
+  // ⚠️ Bash uchun avval `description || command` edi — ya'ni Claude izoh
+  // bermasa XOM BUYRUQ sarlavhaga tushardi. Qisqa buyruq uchun bu yaxshi
+  // ("pm2 restart poster-01 ..." — o'qiladi), lekin ko'p qatorli skript
+  // (python heredoc, uzun quvur) bitta qatorga siqilib, o'qib bo'lmaydigan
+  // belgi devoriga aylanardi.
+  //
+  // Endi tartib: Claude'ning izohi -> qisqa bir qatorli buyruq -> oddiy
+  // o'zbekcha tavsif (`explainBash`). Xom kod hech qachon sarlavhaga
+  // tushmaydi — u kartochka ichida "buyruq" bo'limida ochiladi.
+  const INLINE_CMD_MAX = 60;
+
+  function bashLabel(input) {
+    if (input.description) return input.description;
+    const cmd = (input.command || '').trim();
+    if (!cmd) return "Terminal buyrug'i";
+    if (!cmd.includes('\n') && cmd.length <= INLINE_CMD_MAX) return cmd;
+    return explainBash(cmd).title;
+  }
+
   function toolSummary(name, input) {
     input = input || {};
-    if (name === 'Bash' || name === 'PowerShell') return input.description || input.command || '';
+    if (name === 'Bash' || name === 'PowerShell') return bashLabel(input);
     if (name === 'Read' || name === 'Write' || name === 'Edit') return input.file_path || '';
     if (name === 'Grep') return input.pattern || '';
     if (name === 'Glob') return input.pattern || '';
@@ -370,9 +391,38 @@
     const tag = TOOL_TAGS[name] || name.toUpperCase();
     const summary = toolSummary(name, input);
     card.innerHTML = `<div class="tool-head"><span class="tool-tag">[${escapeHtml(tag)}]</span><span class="tool-summary"></span><span class="tool-status"></span></div>`;
+    const head = card.querySelector('.tool-head');
     card.querySelector('.tool-summary').textContent = summary;
-    // Buyruqning o'zidan nusxa olish — SSH'ga ko'chirish uchun eng tez yo'l.
-    if (summary) card.querySelector('.tool-head').appendChild(makeCopyBtn(() => summary));
+
+    // Xom buyruq sarlavhada ko'rinmaydi, lekin kerak bo'lganda ochiladi.
+    // Sarlavhada u ko'rsatilganda (qisqa, bir qatorli) takrorlash shart emas.
+    const rawCmd = (name === 'Bash' || name === 'PowerShell') ? (input.command || '').trim() : '';
+    if (rawCmd && rawCmd !== summary) {
+      const cmdToggle = document.createElement('button');
+      cmdToggle.type = 'button';
+      cmdToggle.className = 'tool-toggle';
+      cmdToggle.textContent = 'buyruq';
+      cmdToggle.setAttribute('aria-expanded', 'false');
+
+      const cmdWrap = document.createElement('div');
+      cmdWrap.className = 'tool-output tool-cmd hidden';
+      const pre = document.createElement('pre');
+      pre.textContent = rawCmd;
+      cmdWrap.appendChild(pre);
+      cmdWrap.appendChild(makeCopyBtn(() => rawCmd));
+
+      cmdToggle.addEventListener('click', () => {
+        const willShow = cmdWrap.classList.contains('hidden');
+        cmdWrap.classList.toggle('hidden', !willShow);
+        cmdToggle.setAttribute('aria-expanded', String(willShow));
+        cmdToggle.classList.toggle('open', willShow);
+      });
+      head.appendChild(cmdToggle);
+      card.appendChild(cmdWrap);
+    }
+
+    // Nusxa olish — xom buyruq bo'lsa o'sha, aks holda sarlavha.
+    if (rawCmd || summary) head.appendChild(makeCopyBtn(() => rawCmd || summary));
     messagesEl.appendChild(card);
     scrollToBottom();
     return card;
@@ -387,7 +437,10 @@
     card.classList.add(isError ? 'error' : 'ok');
     const statusEl = card.querySelector('.tool-status');
     if (statusEl) statusEl.textContent = isError ? '✗' : '✓';
-    if (!output || card.querySelector('.tool-output')) return;
+    // ⚠️ `.tool-result` bo'yicha tekshiramiz, `.tool-output` bo'yicha emas:
+    // buyruq bloki ham `.tool-output` uslubini ishlatadi va umumiy tekshiruv
+    // natija blokini qo'shishga to'sqinlik qilardi.
+    if (!output || card.querySelector('.tool-output.tool-result')) return;
 
     card.classList.add('expandable');
     const head = card.querySelector('.tool-head');
@@ -400,7 +453,7 @@
     toggle.setAttribute('aria-expanded', 'false');
 
     const outWrap = document.createElement('div');
-    outWrap.className = 'tool-output hidden';
+    outWrap.className = 'tool-output tool-result hidden';
     const pre = document.createElement('pre');
     pre.textContent = output;
     outWrap.appendChild(pre);

@@ -1794,3 +1794,7 @@ pre.has-copy .copy-btn {
   background: var(--bg-elev-2);
   margin-bottom: 0;
 }
+
+/* Kartochka ichidagi buyruq bloki — xom buyruq shu yerda ochiladi
+   (sarlavhada emas, chunki ko'p qatorli skript o'qib bo'lmasdi). */
+.tool-output.tool-cmd pre { max-height: 220px; }

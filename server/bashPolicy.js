@@ -64,11 +64,23 @@ const DANGEROUS_BASH_PATTERNS = [
   /\bapt(-get)?\s+(remove|purge|autoremove)\b/,
   /\b(fdisk|parted|wipefs)\b/,
 
-  // Yangi: shell ichida boshqa shell/interpretator ochish — allowlist'ning
-  // butun mantiqini chetlab o'tadi, shuning uchun har doim so'raladi.
+  // Shell ichida boshqa shell/interpretator ochish — allowlist'ning butun
+  // mantiqini chetlab o'tadi, shuning uchun har doim so'raladi.
   /\b(sh|bash|zsh|dash)\s+-c\b/,
   /\b(node|python3?|perl|ruby|php)\s+-(e|c)\b/,
   /\bbase64\b[^|;&\n]*\|\s*(sh|bash|zsh)\b/,
+
+  // ⚠️ Interpretator kodni STDIN orqali olishi — `-e`/`-c` bilan bir xil
+  // natija, lekin uchta shakli ham tekshiruvdan o'tib ketardi:
+  //     python3 - <<< "import os; ..."      (bo'sh "-" = stdin)
+  //     python3 << EOF ... EOF              (heredoc)
+  //     cat script.py | python3             (quvur orqali)
+  // Uchalasi ham `python3` allowlist'da bo'lgani uchun SO'ROVSIZ ishlardi,
+  // holbuki ular ixtiyoriy kod bajaradi. `python3 -m pip` kabi haqiqiy
+  // bayroqlar ta'sirlanmaydi (u yerda "-" dan keyin harf keladi).
+  /\b(node|python3?|perl|ruby|php|sh|bash|zsh|dash)\s+-\s*(<|$)/,
+  /\b(node|python3?|perl|ruby|php|sh|bash|zsh|dash)\b[^|;&\n]*<</,
+  /\|\s*(node|python3?|perl|ruby|php|sh|bash|zsh|dash)\b/,
   /\beval\b/,
   /\bnc\b\s+.*-e\b/, // reverse shell
 ];
