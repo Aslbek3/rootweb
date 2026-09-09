@@ -43,22 +43,14 @@
         <button class="icon-btn" id="clearChatBtn" title="Chatni tozalash" aria-label="Chatni tozalash">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 5v6h-6"/></svg>
         </button>
-        <button class="icon-btn" id="themeBtn" title="Mavzu (bosib almashtiring)" aria-label="Mavzu">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18V3z" fill="currentColor" stroke="none"/></svg>
-        </button>
-        <button class="icon-btn" id="notifyBtn" title="Bildirishnomalar" aria-label="Bildirishnomalar">
-          <svg class="i-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10a6 6 0 1 1 12 0c0 3.2 1 5 2 6H4c1-1 2-2.8 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>
-          <svg class="i-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10a6 6 0 1 1 12 0c0 3.2 1 5 2 6H4c1-1 2-2.8 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/><path d="M3 3l18 18"/></svg>
-        </button>
         <button class="icon-btn" id="filesBtn" title="Fayllar va loyihalar" aria-label="Fayllar va loyihalar">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6z"/></svg>
           <span class="badge-dot hidden" id="filesBadge"></span>
         </button>
-        <a class="icon-btn" href="/auth.html" title="Claude hisobini ulash" aria-label="Claude hisobini ulash">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M16 7l3 3"/><path d="M13 10l2.5 2.5"/></svg>
-        </a>
-        <button class="icon-btn" id="logoutBtn" title="Chiqish" aria-label="Chiqish">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/><path d="M15 8l4 4-4 4"/><path d="M19 12H9"/></svg>
+        <!-- Mavzu, bildirishnoma, hisob va chiqish shu yerga ko'chirildi —
+             topbar'da 7 ta tugma bor edi, telefonda bu juda ko'p. -->
+        <button class="icon-btn" id="settingsBtn" title="Sozlamalar" aria-label="Sozlamalar" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </div>
     </header>
@@ -187,6 +179,60 @@
       <div class="empty-hint">"Joriy sessiya" faqat server ishga tushirilgandan beri hisoblanadi (server qayta ishga tushirilsa nolga qaytadi). 5-soatlik/haftalik limit — Claude hisobingizning haqiqiy holati.</div>
     </div>
   </aside>
+
+  <!-- ================= Sozlamalar ================= -->
+  <div id="settingsOverlay" class="overlay hidden"></div>
+  <div id="settingsSheet" class="settings-sheet" role="dialog" aria-modal="true" aria-label="Sozlamalar">
+    <div class="settings-header">
+      <span class="settings-title">Sozlamalar</span>
+      <button class="icon-btn" id="settingsCloseBtn" title="Yopish" aria-label="Yopish">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="settings-body">
+
+      <div class="settings-group">
+        <div class="settings-group-title">Ko'rinish</div>
+        <button type="button" class="settings-row" id="themeBtn">
+          <span class="settings-row-main">
+            <span class="settings-row-label">Mavzu</span>
+            <span class="settings-row-desc">Fon rangi va yorug'lik</span>
+          </span>
+          <span class="settings-row-value" id="themeValue">Claude</span>
+        </button>
+      </div>
+
+      <div class="settings-group" id="notifyGroup">
+        <div class="settings-group-title">Bildirishnomalar</div>
+        <button type="button" class="settings-row" id="notifyBtn">
+          <span class="settings-row-main">
+            <span class="settings-row-label">Bildirishnoma</span>
+            <span class="settings-row-desc">Ruxsat so'ralganda va ish tugaganda xabar beradi</span>
+          </span>
+          <span class="settings-row-value" id="notifyValue">—</span>
+        </button>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">Hisob</div>
+        <a class="settings-row" href="/auth.html">
+          <span class="settings-row-main">
+            <span class="settings-row-label">Claude hisobini ulash</span>
+            <span class="settings-row-desc">Token / kalit — hisobni shu yerdan bog'lash</span>
+          </span>
+          <span class="settings-row-arrow" aria-hidden="true">›</span>
+        </a>
+        <button type="button" class="settings-row danger" id="logoutBtn">
+          <span class="settings-row-main">
+            <span class="settings-row-label">Chiqish</span>
+            <span class="settings-row-desc">Barcha qurilmalardagi sessiyalar tugaydi</span>
+          </span>
+          <span class="settings-row-arrow" aria-hidden="true">›</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
 
   <div id="fileViewerOverlay" class="overlay hidden"></div>
   <div id="fileViewer" class="file-viewer">

@@ -1,4 +1,8 @@
 (() => {
+  // Ustma-ust oynalar steki va dialoglar `ui-core.js`da (`window.RW`) —
+  // "orqaga" tugmasi / Escape boshqaruvi shu yerdan keladi.
+  const { openOverlay, requestCloseOverlay, confirmDialog, promptDialog } = window.RW;
+
   const messagesEl = document.getElementById('messages');
   const jumpBottomBtn = document.getElementById('jumpBottomBtn');
   const enterModeBtn = document.getElementById('enterModeBtn');
@@ -12,6 +16,13 @@
   const searchPrev = document.getElementById('searchPrev');
   const searchNext = document.getElementById('searchNext');
   const searchClose = document.getElementById('searchClose');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsSheet = document.getElementById('settingsSheet');
+  const settingsOverlay = document.getElementById('settingsOverlay');
+  const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+  const themeValue = document.getElementById('themeValue');
+  const notifyValue = document.getElementById('notifyValue');
+  const notifyGroup = document.getElementById('notifyGroup');
   const form = document.getElementById('composer');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('sendBtn');
@@ -953,6 +964,16 @@
   });
 
   logoutBtn.addEventListener('click', async () => {
+    // Tasdiq so'raymiz, chunki chiqish endi BARCHA qurilmalardagi
+    // sessiyalarni bekor qiladi (serverdagi `sessionVersion` oshadi) —
+    // telefondan bosilsa kompyuterdagi ochiq tab ham chiqib ketadi.
+    const ok = await confirmDialog({
+      title: 'Chiqish',
+      message: "Barcha qurilmalardagi sessiyalar tugaydi — boshqa telefon yoki kompyuterda ochiq bo'lsa, ular ham qaytadan parol so'raydi.",
+      confirmText: 'Chiqish',
+      danger: true,
+    });
+    if (!ok) return;
     await fetch('/api/logout', { method: 'POST' });
     window.location.href = '/login.html';
   });
@@ -979,6 +1000,9 @@
     else document.documentElement.setAttribute('data-theme', effective);
     if (themeMeta) themeMeta.setAttribute('content', THEME_COLOR[effective] || THEME_COLOR.claude);
     themeBtn.title = `Mavzu: ${THEME_LABEL[theme]} (bosib almashtiring)`;
+    // Sozlamalar panelida joriy qiymat matn bilan ko'rsatiladi (avval bu
+    // topbar'dagi ikonka edi va qaysi mavzu tanlanganini bilib bo'lmasdi).
+    if (themeValue) themeValue.textContent = THEME_LABEL[theme] || theme;
     try { localStorage.setItem('rootwebTheme', theme); } catch { /* xotira o'chirilgan bo'lishi mumkin */ }
   }
 
@@ -1082,13 +1106,26 @@
   let notifyMuted = localStorage.getItem('notifyMuted') === '1';
 
   function updateNotifyBtn() {
-    if (!('Notification' in window)) { notifyBtn.style.display = 'none'; return; }
+    // Brauzer bildirishnomani qo'llab-quvvatlamasa butun BO'LIMNI
+    // yashiramiz (avval faqat ikonka yashirilardi va sozlamalarda bo'sh
+    // sarlavha qolib ketardi).
+    if (!('Notification' in window)) {
+      if (notifyGroup) notifyGroup.classList.add('hidden');
+      return;
+    }
     const active = Notification.permission === 'granted' && !notifyMuted;
+    const blocked = Notification.permission === 'denied';
     notifyBtn.classList.toggle('on', active);
     notifyBtn.classList.toggle('off', !active);
-    const label = active ? 'Bildirishnomalar (yoqilgan)' : "Bildirishnomalar (o'chirilgan)";
-    notifyBtn.title = label;
-    notifyBtn.setAttribute('aria-label', label);
+    const label = blocked
+      ? 'Brauzerda bloklangan'
+      : (active ? 'Yoqilgan' : "O'chirilgan");
+    if (notifyValue) {
+      notifyValue.textContent = label;
+      notifyValue.classList.toggle('on', active);
+    }
+    notifyBtn.title = `Bildirishnomalar: ${label}`;
+    notifyBtn.setAttribute('aria-label', `Bildirishnomalar: ${label}`);
   }
 
   notifyBtn.addEventListener('click', async () => {
@@ -1119,9 +1156,36 @@
 
   updateNotifyBtn();
 
-  // Ustma-ust oynalar steki va dialoglar `ui-core.js`da (`window.RW`) —
-  // "orqaga" tugmasi / Escape boshqaruvi shu yerdan keladi.
-  const { openOverlay, requestCloseOverlay, confirmDialog, promptDialog } = window.RW;
+
+  // ---------------- sozlamalar paneli ----------------
+  // Mavzu, bildirishnoma, hisob ulash va chiqish shu yerga ko'chirildi —
+  // topbar'da 7 ta ikonka bor edi va telefonda ular bir-biriga tiqilib
+  // ketardi. Endi topbar'da 4 ta: qidiruv, chatni tozalash, fayllar,
+  // sozlamalar.
+
+  function openSettings() {
+    if (settingsSheet.classList.contains('open')) return;
+    settingsSheet.classList.add('open');
+    settingsOverlay.classList.remove('hidden');
+    requestAnimationFrame(() => settingsOverlay.classList.add('show'));
+    settingsBtn.setAttribute('aria-expanded', 'true');
+    openOverlay('settings', doCloseSettings);
+  }
+
+  function doCloseSettings() {
+    settingsSheet.classList.remove('open');
+    settingsOverlay.classList.remove('show');
+    setTimeout(() => settingsOverlay.classList.add('hidden'), 180);
+    settingsBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  function closeSettings() {
+    requestCloseOverlay('settings');
+  }
+
+  settingsBtn.addEventListener('click', openSettings);
+  settingsCloseBtn.addEventListener('click', closeSettings);
+  settingsOverlay.addEventListener('click', closeSettings);
 
   // ---------------- drawer: loyihalar & fayllar ----------------
 
