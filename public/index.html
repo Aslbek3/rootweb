@@ -11,7 +11,9 @@
 <link rel="stylesheet" href="/style.css">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#262624">
-<link rel="apple-touch-icon" href="/icon.svg">
+<!-- iOS SVG apple-touch-icon ni qabul qilmaydi — PNG shart, aks holda
+     "Bosh ekranga qoshish"da ikonka bosh/oq chiqadi. -->
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png">
 <!-- Fayl ko'ruvchidagi syntax highlighting (faqat READ rejimida, muharrir
      hali oddiy textarea).
      ⚠️ Avval bu cdnjs'dan, `integrity` (SRI) sarlavhasisiz yuklanardi. Bu
@@ -29,10 +31,15 @@
       <div class="tl-title">
         <span class="status-dot" id="statusDot"></span>
         <span class="tl-name">Claude Code</span>
-        <span class="cwd" id="cwdLabel">—</span>
+        <!-- Yo'l endi bosiladigan: loyihalar orasida tez almashish uchun
+             ro'yxat ochiladi (avval drawer -> tab -> tanlash kerak edi). -->
+        <button type="button" class="cwd cwd-btn" id="cwdLabel" title="Loyihani almashtirish" aria-haspopup="listbox" aria-expanded="false">—</button>
         <span class="pm2-badge hidden" id="pm2StatusBadge"></span>
       </div>
       <div class="tl-actions">
+        <button class="icon-btn" id="searchBtn" title="Chatda qidirish" aria-label="Chatda qidirish">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
         <button class="icon-btn" id="clearChatBtn" title="Chatni tozalash" aria-label="Chatni tozalash">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 5v6h-6"/></svg>
         </button>
@@ -56,6 +63,25 @@
       </div>
     </header>
 
+    <!-- Loyihalar tez tanlash ro'yxati (topbar'dagi yo'l bosilganda) -->
+    <div id="projectSwitcher" class="project-switcher hidden" role="listbox" aria-label="Loyihalar"></div>
+
+    <!-- Chatda qidirish paneli -->
+    <div id="searchBar" class="search-bar hidden">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="search-icon"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="search" id="searchInput" placeholder="Chatda qidirish..." autocomplete="off">
+      <span class="search-count" id="searchCount"></span>
+      <button type="button" id="searchPrev" class="icon-btn-sm" title="Oldingi" aria-label="Oldingi natija">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>
+      </button>
+      <button type="button" id="searchNext" class="icon-btn-sm" title="Keyingi" aria-label="Keyingi natija">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button type="button" id="searchClose" class="icon-btn-sm" title="Yopish" aria-label="Qidiruvni yopish">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
     <div id="messages"></div>
 
     <div class="composer-wrap">
@@ -65,6 +91,8 @@
       <button type="button" id="jumpBottomBtn" class="jump-bottom hidden" title="Pastga" aria-label="Eng pastga o'tish">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg>
       </button>
+      <!-- Tez buyruqlar: takrorlanuvchi promptlar (localStorage'da saqlanadi) -->
+      <div id="quickCmds" class="quick-cmds hidden"></div>
       <form id="composer">
         <div id="attachmentRow" class="attachment-row hidden"></div>
         <textarea id="input" rows="1" placeholder="Xabar yozing..."></textarea>
@@ -75,6 +103,8 @@
             </button>
             <input type="file" id="composerFileInput" class="hidden" multiple>
             <button type="button" id="modeBtn" class="mode-pill" data-mode="default" title="Ruxsat rejimi (bosib almashtiring)">Manual</button>
+            <button type="button" id="quickCmdsBtn" class="mode-pill" title="Tez buyruqlar" aria-label="Tez buyruqlar">⚡</button>
+            <button type="button" id="enterModeBtn" class="mode-pill enter-pill" title="Enter yuboradi (bosib almashtiring)">Enter ⏎</button>
           </div>
           <div class="composer-toolbar-right">
             <button type="button" id="stopBtn" title="To'xtatish" aria-label="To'xtatish">
@@ -179,6 +209,8 @@
     <textarea id="fileViewerEditor" class="file-viewer-editor hidden" spellcheck="false"></textarea>
   </div>
 
+  <script src="/bash-explain.js"></script>
+  <script src="/ui-core.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

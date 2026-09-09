@@ -416,32 +416,6 @@ button.icon-btn#fileSaveBtn { color: var(--ok); border-color: var(--ok); }
   border-radius: 6px;
   font-weight: 600;
 }
-.pcmd-preview {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 7px 10px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text);
-  white-space: nowrap;
-  overflow-x: auto;
-  margin: 0 0 8px;
-}
-.pcmd-preview.hidden { display: none; }
-.pcmd-toggle {
-  background: none;
-  border: none;
-  color: var(--accent-bright);
-  font-size: 11.5px;
-  font-family: var(--sans);
-  padding: 0;
-  margin: -4px 0 10px;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  display: block;
-}
 .permission-card pre {
   background: var(--bg);
   border-radius: var(--radius-sm);
@@ -1213,8 +1187,6 @@ pre.has-copy .copy-btn {
   pre.has-copy .copy-btn:focus-visible { opacity: 1; }
 }
 
-.pcmd-preview { position: relative; padding-right: 38px; }
-.pcmd-preview .copy-btn { position: absolute; top: 5px; right: 5px; }
 
 /* --- tool natijasi (ochib-yopiladigan) --- */
 .tool-toggle {
@@ -1317,3 +1289,376 @@ pre.has-copy .copy-btn {
   border: 2px solid var(--bg-elev);
 }
 .jump-bottom:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+/* ============================================================
+   Dialoglar (native confirm/prompt o'rniga)
+   ============================================================ */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .16s ease;
+}
+.dialog-overlay.show { opacity: 1; }
+.dialog-sheet {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 20px 20px calc(18px + var(--safe-bottom));
+  box-shadow: 0 -20px 60px -20px rgba(0, 0, 0, 0.7);
+  transform: translateY(14px);
+  transition: transform .18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.dialog-overlay.show .dialog-sheet { transform: translateY(0); }
+/* Kompyuterda pastdan chiqadigan panel emas, markazdagi kartochka */
+@media (min-width: 700px) {
+  .dialog-overlay { align-items: center; }
+  .dialog-sheet { border-radius: var(--radius); }
+}
+.dialog-title { font-size: 15.5px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.dialog-message {
+  font-size: 13.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.dialog-input {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  /* iOS 16px dan kichik shriftda sahifani zoom qiladi */
+  font-size: 16px;
+  font-family: var(--sans);
+}
+.dialog-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.dialog-actions { display: flex; gap: 10px; margin-top: 18px; }
+.dialog-btn {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.dialog-btn.dialog-ok { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dialog-btn.dialog-ok.danger { background: var(--danger); border-color: var(--danger); }
+.dialog-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+@media (hover: hover) and (pointer: fine) {
+  .dialog-btn.dialog-cancel:hover { border-color: var(--text-dim); }
+  .dialog-btn.dialog-ok:hover { background: var(--accent-bright); }
+}
+
+/* ============================================================
+   Loyihalar tez almashtirish (topbar)
+   ============================================================ */
+.cwd-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cwd-btn::after {
+  content: "";
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  border-top: 4px solid currentColor;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  opacity: 0.6;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cwd-btn:hover { background: var(--bg-elev); color: var(--text); }
+}
+.cwd-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+.project-switcher {
+  position: absolute;
+  top: calc(52px + var(--safe-top));
+  left: 12px;
+  right: 12px;
+  max-width: 460px;
+  z-index: 60;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 20px 50px -18px rgba(0, 0, 0, 0.7);
+  padding: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.project-switcher.hidden { display: none; }
+.switcher-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--sans);
+  cursor: pointer;
+  position: relative;
+}
+.switcher-row.active { background: var(--accent-wash); }
+.switcher-label { font-size: 14px; font-weight: 600; }
+.switcher-path { font-size: 11.5px; color: var(--text-dim); font-family: var(--mono); word-break: break-all; }
+.switcher-row .row-badge { position: absolute; top: 9px; right: 10px; }
+@media (hover: hover) and (pointer: fine) {
+  .switcher-row:hover { background: var(--bg-elev-2); }
+}
+.switcher-row:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+/* ============================================================
+   Chatda qidirish
+   ============================================================ */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+  flex-shrink: 0;
+}
+.search-bar.hidden { display: none; }
+.search-bar .search-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  padding: 4px 0;
+}
+.search-bar input:focus { outline: none; }
+.search-count { font-size: 12px; color: var(--text-dim); font-family: var(--mono); flex-shrink: 0; }
+/* Topilgan bloklar: matn tugunlari bo'linmaydi, butun blok belgilanadi —
+   shunda mavjud DOM (nusxa tugmalari, diff, tool natijasi) buzilmaydi. */
+.search-hit { background: var(--accent-wash); border-radius: 6px; }
+.search-hit-active { box-shadow: 0 0 0 2px var(--accent); }
+
+/* ============================================================
+   Tez buyruqlar
+   ============================================================ */
+.quick-cmds {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 2px 8px;
+  scrollbar-width: none;
+}
+.quick-cmds::-webkit-scrollbar { display: none; }
+.quick-cmds.hidden { display: none; }
+.quick-chip {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: color .12s ease, border-color .12s ease;
+}
+.quick-chip-add { color: var(--accent-bright); font-weight: 700; padding: 6px 14px; }
+@media (hover: hover) and (pointer: fine) {
+  .quick-chip:hover { color: var(--text); border-color: var(--text-dim); }
+}
+.quick-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+.mode-pill.on { color: var(--accent-bright); border-color: var(--accent); }
+.enter-pill { font-family: var(--mono); font-size: 11px; }
+
+/* ============================================================
+   PM2: crash-loop ogohlantirishi
+   ============================================================ */
+.bot-restarts.warn { color: var(--accent-bright); font-weight: 600; }
+.bot-restarts.alert { color: var(--danger); font-weight: 700; }
+.bot-row.restart-alert { border-color: rgba(240, 101, 90, 0.45); }
+.bot-row.restart-warn { border-color: rgba(217, 119, 87, 0.35); }
+.bot-warning {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+/* --- jonli log tugmasi --- */
+.live-log-btn {
+  flex-shrink: 0;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.live-log-btn.hidden { display: none; }
+.live-log-btn.on {
+  color: var(--ok);
+  border-color: var(--ok);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* ============================================================
+   Ruxsat kartochkasi — dasturchi bo'lmagan foydalanuvchi uchun
+   ============================================================
+   Tartib: xavf yorlig'i -> oddiy tushuntirish -> Claude nimani mo'ljallagan
+   -> (yopiq) xom buyruq. Avval eng tepada xom buyruq turardi va foydalanuvchi
+   nimaga ruxsat berayotganini tushunmasdi. */
+
+.prisk {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 2px 0 8px;
+  color: var(--text-dim);
+}
+.prisk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-dim);
+}
+.permission-card.risk-read .prisk { color: var(--ok); }
+.permission-card.risk-read .prisk-dot { background: var(--ok); }
+.permission-card.risk-write .prisk { color: var(--text-dim); }
+.permission-card.risk-service .prisk { color: var(--accent-bright); }
+.permission-card.risk-service .prisk-dot { background: var(--accent); }
+.permission-card.risk-danger .prisk { color: var(--danger); }
+.permission-card.risk-danger .prisk-dot { background: var(--danger); }
+.permission-card.risk-unknown .prisk { color: var(--accent-bright); }
+.permission-card.risk-unknown .prisk-dot { background: var(--accent); }
+
+/* Chap chekkadagi rangli chiziq — xavf darajasi bir qarashda ko'rinsin */
+.permission-card { border-left-width: 3px; }
+.permission-card.risk-read { border-left-color: var(--ok); }
+.permission-card.risk-service { border-left-color: var(--accent); }
+.permission-card.risk-danger { border-left-color: var(--danger); }
+
+/* Asosiy tushuntirish — kartochkadagi eng katta matn */
+.pfriendly {
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+/* Claude'ning o'z izohi (tool `description` maydoni) */
+.pintent {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.45;
+  margin-bottom: 10px;
+  padding-left: 9px;
+  border-left: 2px solid var(--border-strong);
+}
+.pintent.hidden { display: none; }
+.pintent-label { color: var(--text-dim); opacity: 0.75; }
+.pintent-text { color: var(--text-dim); }
+
+/* Xom buyruq — yopiq holda, ataylab ikkinchi darajali */
+.pcmd-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.pcmd-toggle::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform .15s ease;
+}
+.pcmd-toggle.open::before { transform: rotate(90deg); }
+@media (hover: hover) and (pointer: fine) {
+  .pcmd-toggle:hover { color: var(--text); }
+}
+.pcmd-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+.pcmd-full {
+  position: relative;
+  margin-bottom: 10px;
+}
+.pcmd-full.hidden { display: none; }
+.pcmd-full pre {
+  margin: 0;
+  padding: 9px 40px 9px 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.pcmd-full .copy-btn { position: absolute; top: 7px; right: 7px; }

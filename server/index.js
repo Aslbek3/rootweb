@@ -180,9 +180,13 @@ app.post('/api/logout', (req, res) => {
 // `/api/login` bu yerda YO'Q — u yuqorida, shu middleware'dan oldin
 // ro'yxatdan o'tgan, ya'ni bu ro'yxatga qo'shilsa o'lik yozuv bo'lib qolardi.
 const OPEN_PATHS = new Set(['/login.html', '/login.js', '/style.css', '/manifest.json', '/icon.svg']);
+// Ikonkalar ham ochiq bo'lishi kerak: `manifest.json` login sahifasida ham
+// ulanadi va brauzer ikonkalarni autentifikatsiyasiz so'raydi — himoyalangan
+// bo'lsa ular `login.html`ga yo'naltirilib, ikonka buzilgan ko'rinardi.
+const OPEN_PREFIXES = ['/icons/'];
 
 app.use((req, res, next) => {
-  if (OPEN_PATHS.has(req.path)) return next();
+  if (OPEN_PATHS.has(req.path) || OPEN_PREFIXES.some((p) => req.path.startsWith(p))) return next();
   if (!isAuthed(req)) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'unauthorized' });
     return res.redirect('/login.html');
@@ -332,6 +336,54 @@ app.post('/api/pm2/:name/stop', async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// Jonli log oqimi (Server-Sent Events). Bitta surat olish uchun pastdagi
+// `/logs` ishlatiladi; bu esa `tail -f` kabi ochiq turadi.
+app.get('/api/pm2/:name/logs/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  // ⚠️ Nginx standart holatda proxy javobini buferlaydi — usiz loglar
+  // real vaqtda emas, bo'lak-bo'lak kechikib kelardi.
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const sse = (event, data) => {
+    if (res.writableEnded) return;
+    if (event) res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  let stop = null;
+  try {
+    stop = pm2Manager.streamLogs(
+      req.params.name,
+      (chunk) => sse(null, chunk),
+      (reason) => { sse('end', reason || ''); res.end(); },
+    );
+  } catch (err) {
+    sse('error', err.message);
+    return res.end();
+  }
+
+  // Proksi va mobil tarmoqlar jim turgan ulanishni uzib qo'yadi — har 20
+  // soniyada izoh (comment) qatori yuboramiz.
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(': ping\n\n');
+  }, 20000);
+
+  // Klient uzilganda `pm2 logs` jarayonini O'LDIRISH shart — aks holda u
+  // abadiy qolib ketadi.
+  const cleanup = () => {
+    clearInterval(heartbeat);
+    if (stop) stop();
+  };
+  req.on('close', cleanup);
+  req.on('aborted', cleanup);
+  res.on('close', cleanup);
+
+  auditLog.log('pm2_logs_stream', { ip: req.ip, name: req.params.name });
 });
 
 app.get('/api/pm2/:name/logs', async (req, res) => {

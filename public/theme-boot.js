@@ -1,11 +1,18 @@
 // Saqlangan mavzuni sahifa chizilishidan oldin qo'llaydi (FOUC'ga qarshi).
-// Avval bu `index.html` ichida inline `<script>` edi — CSP'da `script-src`
-// uchun 'unsafe-inline' talab qilardi, ya'ni XSS himoyasini sezilarli
-// zaiflashtirardi. Alohida fayl sifatida `'self'` yetarli bo'ladi.
+// Alohida fayl, chunki inline `<script>` bo'lsa CSP'da `script-src` uchun
+// 'unsafe-inline' talab qilinardi.
+//
+// `app.js`dagi `resolveTheme()` bilan bir xil mantiq: "system" qiymati
+// OS sozlamasiga qarab hal qilinadi.
 (function () {
   try {
-    var t = localStorage.getItem('rootwebTheme');
-    if (t && t !== 'claude') document.documentElement.setAttribute('data-theme', t);
+    var t = localStorage.getItem('rootwebTheme') || 'claude';
+    if (t === 'system') {
+      t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        ? 'claude'
+        : 'light';
+    }
+    if (t !== 'claude') document.documentElement.setAttribute('data-theme', t);
   } catch (e) {
     /* localStorage o'chirilgan bo'lishi mumkin — standart mavzu qoladi */
   }

@@ -1,6 +1,17 @@
 (() => {
   const messagesEl = document.getElementById('messages');
   const jumpBottomBtn = document.getElementById('jumpBottomBtn');
+  const enterModeBtn = document.getElementById('enterModeBtn');
+  const quickCmdsBtn = document.getElementById('quickCmdsBtn');
+  const quickCmdsEl = document.getElementById('quickCmds');
+  const projectSwitcher = document.getElementById('projectSwitcher');
+  const searchBtn = document.getElementById('searchBtn');
+  const searchBar = document.getElementById('searchBar');
+  const searchInput = document.getElementById('searchInput');
+  const searchCount = document.getElementById('searchCount');
+  const searchPrev = document.getElementById('searchPrev');
+  const searchNext = document.getElementById('searchNext');
+  const searchClose = document.getElementById('searchClose');
   const form = document.getElementById('composer');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('sendBtn');
@@ -414,7 +425,14 @@
     switch (name) {
       case 'Bash':
       case 'PowerShell':
-        return `Terminal buyrug'i ishga tushiriladi: ${input.command || input.description || '(noma\'lum)'}`;
+        // ⚠️ Avval bu yerda XOM BUYRUQ qaytarilardi
+        // ("Terminal buyrug'i ishga tushiriladi: cd /x && git log --oneline...").
+        // Dasturlashni bilmaydigan odam uchun bu hech narsa anglatmasdi, va
+        // eng yomoni — kartochkaning eng ko'zga tashlanadigan joyini
+        // egallardi, Claude'ning o'z tushuntirishi esa pastda, mayda
+        // shriftda qolardi. Endi tushuntirish `explainBash()`dan keladi,
+        // xom buyruq esa "texnik tafsilot" ostiga tushadi.
+        return explainBash(input.command || '').title;
       case 'Edit': {
         const fname = (input.file_path || '').split(/[\\/]/).pop() || input.file_path || 'fayl';
         return `"${fname}" faylida o'zgartirish kiritiladi`;
@@ -433,6 +451,11 @@
         return null;
     }
   }
+
+  // `explainBash` va `RISK_LABEL` — `bash-explain.js` modulida
+  // (DOM'ga bog'liq emas, shuning uchun test bilan qoplangan:
+  // `test/bashExplain.test.js`).
+  const { explainBash, RISK_LABEL } = window.RW;
 
   // Oddiy, kutubxonasiz qatorma-qator diff (Edit tool uchun old_string/
   // new_string). Katta o'zgarishlarda to'liq algoritm emas — faqat
@@ -457,55 +480,84 @@
     return wrap;
   }
 
+  // Ruxsat kartochkasi — dasturlashni bilmaydigan odam uchun qayta qurildi.
+  //
+  // Avvalgi tartib teskari edi: eng ko'zga tashlanadigan qatorda XOM BUYRUQ
+  // turardi (`cd /x && git log --oneline -10 2>/dev/null; echo "==="...`),
+  // Claude'ning o'z tushuntirishi esa pastda, mayda mono shriftda qolardi.
+  // Natijada "nimaga ruxsat berayotganimni bilmay qoldim" degan holat.
+  //
+  // Yangi tartib:
+  //   1) xavf darajasi (rangli yorliq) — "faqat o'qiydi" / "xavfli" ...
+  //   2) oddiy o'zbekcha tushuntirish  — `explainBash()`dan
+  //   3) Claude nima demoqchi bo'lgani — tool'ning o'z `description`i
+  //   4) xom buyruq — yopiq holda, "texnik tafsilot" ostida
   function addPermissionCard(reqId, name, input) {
+    input = input || {};
     const card = document.createElement('div');
-    card.className = 'permission-card';
-    const summary = toolSummary(name, input) || '';
-    const friendly = describeToolCall(name, input);
-    const PREVIEW_LEN = 70;
-    const isLong = summary.length > PREVIEW_LEN;
-    const short = isLong ? summary.slice(0, PREVIEW_LEN) + '…' : summary;
+    const isBash = name === 'Bash' || name === 'PowerShell';
+    const rawCommand = isBash ? (input.command || '') : (toolSummary(name, input) || '');
+    const explained = isBash ? explainBash(rawCommand) : { risk: null, title: describeToolCall(name, input) };
+    // Fayl yozish/tahrirlash uchun xavf darajasini o'zimiz belgilaymiz.
+    const risk = explained.risk
+      || (name === 'Write' || name === 'Edit' || name === 'NotebookEdit' ? 'write' : 'unknown');
+    card.className = `permission-card risk-${risk}`;
+
     card.innerHTML = `
       <div class="ptitle">ruxsat kerak <span class="ptag">[${escapeHtml(name)}]</span></div>
-      ${friendly ? `<div class="pfriendly"></div>` : ''}
-      <div class="pcmd-preview"><code>${escapeHtml(short)}</code></div>
-      ${isLong ? `<button type="button" class="pcmd-toggle">texnik tafsilot</button>
-      <pre class="pcmd-full hidden"><code>${escapeHtml(summary).slice(0, 2000)}</code></pre>` : ''}
+      <div class="prisk"><span class="prisk-dot"></span><span class="prisk-text"></span></div>
+      <div class="pfriendly"></div>
+      <div class="pintent hidden"><span class="pintent-label">Claude nima qilmoqchi:</span> <span class="pintent-text"></span></div>
+      <button type="button" class="pcmd-toggle">texnik tafsilot</button>
+      <div class="pcmd-full hidden"><pre><code></code></pre></div>
       <div class="permission-diff-slot"></div>
       <div class="permission-actions">
         <button class="allow">Ruxsat berish</button>
         <button class="deny">Rad etish</button>
       </div>`;
-    if (friendly) card.querySelector('.pfriendly').textContent = friendly;
-    // Ruxsat so'ralayotgan buyruqni nusxalash: ba'zan uni tasdiqlash o'rniga
-    // qo'lda, o'zgartirib ishga tushirish qulayroq bo'ladi.
-    if (summary) card.querySelector('.pcmd-preview').appendChild(makeCopyBtn(() => summary));
-    if (name === 'Edit' && input && typeof input.old_string === 'string' && typeof input.new_string === 'string') {
-      card.querySelector('.permission-diff-slot').appendChild(renderLineDiff(input.old_string, input.new_string));
+
+    card.querySelector('.prisk-text').textContent = RISK_LABEL[risk] || RISK_LABEL.unknown;
+    card.querySelector('.pfriendly').textContent = explained.title || 'Amal bajariladi';
+
+    // Claude o'z `description`ini bergan bo'lsa uni ham ko'rsatamiz — u
+    // ko'pincha kontekstni aniqroq aytadi ("Show git log of rootweb").
+    if (isBash && input.description) {
+      const intent = card.querySelector('.pintent');
+      intent.classList.remove('hidden');
+      intent.querySelector('.pintent-text').textContent = input.description;
     }
-    if (isLong) {
-      const toggle = card.querySelector('.pcmd-toggle');
-      const preview = card.querySelector('.pcmd-preview');
-      const full = card.querySelector('.pcmd-full');
+
+    // Xom buyruq — yopiq holda. Nusxa olish tugmasi ham shu yerda.
+    const full = card.querySelector('.pcmd-full');
+    const toggle = card.querySelector('.pcmd-toggle');
+    if (rawCommand) {
+      full.querySelector('code').textContent = rawCommand.slice(0, 4000);
+      full.appendChild(makeCopyBtn(() => rawCommand));
       toggle.addEventListener('click', () => {
         const willShow = full.classList.contains('hidden');
-        full.classList.toggle('hidden');
-        preview.classList.toggle('hidden', willShow);
+        full.classList.toggle('hidden', !willShow);
         toggle.textContent = willShow ? 'yashirish' : 'texnik tafsilot';
+        toggle.classList.toggle('open', willShow);
       });
+    } else {
+      toggle.remove();
+      full.remove();
     }
-    const allowBtn = card.querySelector('.allow');
-    const denyBtn = card.querySelector('.deny');
+
+    if (name === 'Edit' && typeof input.old_string === 'string' && typeof input.new_string === 'string') {
+      card.querySelector('.permission-diff-slot').appendChild(renderLineDiff(input.old_string, input.new_string));
+    }
+
     const respond = (approve) => {
       send({ type: 'permission', id: reqId, approve });
       const resolved = document.createElement('div');
       resolved.className = 'permission-resolved ' + (approve ? 'ok' : 'deny');
       resolved.innerHTML = `<span class="permission-resolved-icon">${approve ? '✓' : '✗'}</span><span class="tool-tag">[${escapeHtml(name)}]</span><span class="permission-resolved-text"></span>`;
-      resolved.querySelector('.permission-resolved-text').textContent = short;
+      resolved.querySelector('.permission-resolved-text').textContent = explained.title || rawCommand.slice(0, 70);
       card.replaceWith(resolved);
     };
-    allowBtn.addEventListener('click', () => respond(true));
-    denyBtn.addEventListener('click', () => respond(false));
+    card.querySelector('.allow').addEventListener('click', () => respond(true));
+    card.querySelector('.deny').addEventListener('click', () => respond(false));
     messagesEl.appendChild(card);
     scrollToBottom();
   }
@@ -763,8 +815,38 @@
     setBusy(true);
   });
 
+  // Enter yuboradimi yoki yangi qator qo'shadimi. Telefonda ko'p qatorli
+  // matn yozish uchun har safar Shift+Enter bosish noqulay (virtual
+  // klaviaturada Shift umuman ko'rinmasligi mumkin), shuning uchun bu
+  // sozlama qo'shildi. Kompyuterda standart — Enter yuboradi.
+  let enterSends = true;
+  try {
+    const saved = localStorage.getItem('rootwebEnterSends');
+    if (saved !== null) enterSends = saved === '1';
+    else enterSends = !window.matchMedia || !window.matchMedia('(pointer: coarse)').matches;
+  } catch { /* standart qiymat qoladi */ }
+
+  function setEnterSends(v) {
+    enterSends = v;
+    try { localStorage.setItem('rootwebEnterSends', v ? '1' : '0'); } catch { /* noop */ }
+    if (enterModeBtn) {
+      enterModeBtn.textContent = v ? 'Enter ⏎' : 'Enter ↵';
+      enterModeBtn.classList.toggle('on', v);
+      const label = v ? 'Enter yuboradi (bosib almashtiring)' : 'Enter yangi qator (bosib almashtiring)';
+      enterModeBtn.title = label;
+      enterModeBtn.setAttribute('aria-label', label);
+    }
+  }
+
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      if (enterSends) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+      // enterSends=false bo'lsa Enter odatdagidek yangi qator qo'shadi
+    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      // Ctrl/Cmd+Enter har doim yuboradi — rejimdan qat'i nazar
       e.preventDefault();
       form.requestSubmit();
     } else if (e.key === 'Tab' && e.shiftKey) {
@@ -776,17 +858,32 @@
     }
   });
 
-  input.addEventListener('input', () => {
+  // Maksimal balandlik 120px edi — telefonda ~4 qator, ya'ni uzunroq prompt
+  // yozayotganda yozganingizni ko'rmasdingiz. Endi ekran balandligining
+  // 40% igacha o'sadi.
+  function autoGrowInput() {
     input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-  });
+    const max = Math.max(120, Math.round(window.innerHeight * 0.4));
+    input.style.height = Math.min(input.scrollHeight, max) + 'px';
+  }
+
+  input.addEventListener('input', autoGrowInput);
+  window.addEventListener('resize', autoGrowInput);
+
+  enterModeBtn.addEventListener('click', () => setEnterSends(!enterSends));
+  setEnterSends(enterSends);
 
   stopBtn.addEventListener('click', () => {
     send({ type: 'stop' });
   });
 
-  clearChatBtn.addEventListener('click', () => {
-    const ok = confirm("Suhbat tarixi butunlay o'chadi, qaytarib bo'lmaydi. Davom etasizmi?");
+  clearChatBtn.addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Chatni tozalash',
+      message: "Suhbat tarixi butunlay o'chadi va qaytarib bo'lmaydi. Claude ham bu suhbatni eslamaydi.",
+      confirmText: 'Tozalash',
+      danger: true,
+    });
     if (!ok) return;
     send({ type: 'clear_chat' });
   });
@@ -796,27 +893,49 @@
     window.location.href = '/login.html';
   });
 
-  // ---------------- mavzu (claude / qora / yorug') ----------------
-  const THEME_ORDER = ['claude', 'black', 'light'];
-  const THEME_LABEL = { claude: 'Claude', black: "Qora", light: "Yorug'" };
+  // ---------------- mavzu (tizim / claude / qora / yorug') ----------------
+  // "tizim" varianti qo'shildi: telefon kechqurun avtomatik qorong'i rejimga
+  // o'tsa, ilova ham o'tadi. Avval faqat 3 ta qo'lda tanlanadigan mavzu bor
+  // edi va `prefers-color-scheme` umuman ishlatilmasdi.
+  const THEME_ORDER = ['system', 'claude', 'black', 'light'];
+  const THEME_LABEL = { system: 'Tizim', claude: 'Claude', black: "Qora", light: "Yorug'" };
   const THEME_COLOR = { claude: '#262624', black: '#050505', light: '#faf9f5' };
   const themeMeta = document.querySelector('meta[name="theme-color"]');
+  const darkMq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+  // "tizim" tanlanganda haqiqiy mavzuni OS sozlamasidan olamiz.
+  function resolveTheme(theme) {
+    if (theme !== 'system') return theme;
+    return darkMq && darkMq.matches ? 'claude' : 'light';
+  }
 
   function applyTheme(theme) {
-    if (theme === 'claude') document.documentElement.removeAttribute('data-theme');
-    else document.documentElement.setAttribute('data-theme', theme);
-    if (themeMeta) themeMeta.setAttribute('content', THEME_COLOR[theme] || THEME_COLOR.claude);
+    const effective = resolveTheme(theme);
+    if (effective === 'claude') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', effective);
+    if (themeMeta) themeMeta.setAttribute('content', THEME_COLOR[effective] || THEME_COLOR.claude);
     themeBtn.title = `Mavzu: ${THEME_LABEL[theme]} (bosib almashtiring)`;
     try { localStorage.setItem('rootwebTheme', theme); } catch { /* xotira o'chirilgan bo'lishi mumkin */ }
   }
 
+  function currentThemeSetting() {
+    try { return localStorage.getItem('rootwebTheme') || 'claude'; } catch { return 'claude'; }
+  }
+
   themeBtn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'claude';
-    const next = THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length];
-    applyTheme(next);
+    const current = currentThemeSetting();
+    const idx = THEME_ORDER.indexOf(current);
+    applyTheme(THEME_ORDER[(idx + 1) % THEME_ORDER.length]);
   });
 
-  applyTheme(document.documentElement.getAttribute('data-theme') || 'claude');
+  // OS mavzusi o'zgarsa, "tizim" rejimida darhol ergashamiz.
+  if (darkMq && darkMq.addEventListener) {
+    darkMq.addEventListener('change', () => {
+      if (currentThemeSetting() === 'system') applyTheme('system');
+    });
+  }
+
+  applyTheme(currentThemeSetting());
 
   // ---------------- foydalanish statistikasi (usage) ----------------
   let usageState = { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
@@ -936,44 +1055,9 @@
 
   updateNotifyBtn();
 
-  // ---------------- ustma-ust oynalar: orqaga tugmasi va Escape ----------------
-  //
-  // Avval hech qanday `popstate` boshqaruvi yo'q edi: `display: standalone`
-  // PWA'da drawer yoki fayl ko'ruvchi ochiq turganda Android'ning "orqaga"
-  // tugmasi oynani yopmasdan ILOVANI butunlay yopardi. Escape ham hech
-  // qayerda ishlamasdi.
-  //
-  // Endi har bir ochilgan oyna `history.pushState` bilan bitta yozuv
-  // qo'shadi; yopish esa har doim `history.back()` orqali ketadi, ya'ni
-  // brauzer tarixi va ekrandagi holat bir-biriga mos qoladi.
-  const overlayStack = [];
-
-  function openOverlay(name, closeFn) {
-    overlayStack.push({ name, close: closeFn });
-    history.pushState({ rootwebOverlay: name }, '');
-  }
-
-  // Foydalanuvchi yopmoqchi bo'lganda (tugma, fon bosilishi, Escape) shu
-  // chaqiriladi — DOM'ni o'zi yopmaydi, `history.back()` qiladi va haqiqiy
-  // yopish `popstate`da bajariladi. Shunda "orqaga" va "yopish" bir xil
-  // yo'ldan boradi va tarix rasmga mos qoladi.
-  function requestCloseOverlay(name) {
-    if (!overlayStack.length) return;
-    if (name && !overlayStack.some((o) => o.name === name)) return;
-    history.back();
-  }
-
-  window.addEventListener('popstate', () => {
-    const top = overlayStack.pop();
-    if (top) top.close();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && overlayStack.length) {
-      e.preventDefault();
-      history.back();
-    }
-  });
+  // Ustma-ust oynalar steki va dialoglar `ui-core.js`da (`window.RW`) —
+  // "orqaga" tugmasi / Escape boshqaruvi shu yerdan keladi.
+  const { openOverlay, requestCloseOverlay, confirmDialog, promptDialog } = window.RW;
 
   // ---------------- drawer: loyihalar & fayllar ----------------
 
@@ -1226,7 +1310,12 @@
       delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12"/><path d="M10 11v6M14 11v6"/></svg>';
       delBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const ok = confirm(`"${p.label}" loyihasini ro'yxatdan o'chirmoqchimisiz?\n\nFayllar va PM2'dagi tegishli bot/xizmat O'ZGARMAYDI — faqat shu ro'yxatdan va chat tarixi o'chadi.`);
+        const ok = await confirmDialog({
+          title: `"${p.label}" loyihasini o'chirish`,
+          message: "Fayllar va PM2'dagi tegishli bot/xizmat O'ZGARMAYDI — faqat shu ro'yxatdan va chat tarixi o'chadi.",
+          confirmText: "Ro'yxatdan o'chirish",
+          danger: true,
+        });
         if (!ok) return;
         await fetch(`/api/projects/${encodeURIComponent(p.id)}`, { method: 'DELETE' });
         fetchProjects();
@@ -1464,7 +1553,12 @@
         renameBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
         renameBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const newName = prompt('Yangi nom:', entry.name);
+          const newName = await promptDialog({
+            title: 'Nomini o\'zgartirish',
+            message: entry.name,
+            value: entry.name,
+            confirmText: 'O\'zgartirish',
+          });
           if (!newName || newName === entry.name) return;
           try {
             const res2 = await fetch(`/api/file/rename?${browseQuery()}&file=${encodeURIComponent(relPath)}`, {
@@ -1487,10 +1581,15 @@
         delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>';
         delBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const warn = entry.type === 'dir'
-            ? `"${entry.name}" papkasini VA ICHIDAGI HAMMA NARSANI butunlay o'chirmoqchimisiz?`
-            : `"${entry.name}" faylini o'chirmoqchimisiz?`;
-          if (!confirm(warn)) return;
+          const ok = await confirmDialog({
+            title: entry.type === 'dir' ? `"${entry.name}" papkasini o'chirish` : `"${entry.name}" faylini o'chirish`,
+            message: entry.type === 'dir'
+              ? "Papka VA ICHIDAGI HAMMA NARSA butunlay o'chadi. Qaytarib bo'lmaydi."
+              : "Fayl butunlay o'chadi. Qaytarib bo'lmaydi.",
+            confirmText: "O'chirish",
+            danger: true,
+          });
+          if (!ok) return;
           try {
             const res2 = await fetch(`/api/file?${browseQuery()}&file=${encodeURIComponent(relPath)}`, { method: 'DELETE' });
             const data2 = await res2.json();
@@ -1554,6 +1653,8 @@
   }
 
   async function openFile(relPath) {
+    stopLogStream();
+    if (liveLogBtn) liveLogBtn.classList.add('hidden');
     currentFilePath = relPath;
     currentFileEditable = false;
     setFileEditMode(false);
@@ -1623,6 +1724,9 @@
   }
 
   function doCloseFileViewer() {
+    // Ochiq qolgan SSE oqimi serverdagi `pm2 logs` jarayonini tirik ushlab
+    // turadi — oyna yopilishi bilan uni to'xtatamiz.
+    stopLogStream();
     fileViewer.classList.remove('open');
     fileViewerOverlay.classList.remove('show');
     setTimeout(() => fileViewerOverlay.classList.add('hidden'), 180);
@@ -1677,15 +1781,37 @@
     if (botPollTimer) { clearInterval(botPollTimer); botPollTimer = null; }
   }
 
+  // Restart soni shu chegaradan oshsa ogohlantiramiz. Avval bu shunchaki
+  // raqam edi va ko'zga tashlanmasdi — natijada `zayafka-bot`ning 139 ta
+  // restarti (boshqalarda 2-13) oylab sezilmay ketishi mumkin edi.
+  const RESTART_WARN = 25;
+  const RESTART_ALERT = 60;
+
+  // Uptime juda qisqa + restart ko'p bo'lsa — bu crash-loop alomati:
+  // jarayon ko'tarilyapti, yiqilyapti va PM2 uni qayta ko'taryapti.
+  function restartSeverity(p) {
+    const restarts = p.restarts || 0;
+    const upSec = p.uptime ? (Date.now() - p.uptime) / 1000 : Infinity;
+    if (restarts >= RESTART_ALERT || (restarts >= RESTART_WARN && upSec < 300)) return 'alert';
+    if (restarts >= RESTART_WARN) return 'warn';
+    return '';
+  }
+
   function renderBotList(processes) {
     botListEl.innerHTML = '';
     if (!processes.length) {
       botListEl.innerHTML = '<div class="empty-hint">PM2 jarayoni topilmadi.</div>';
       return;
     }
-    for (const p of processes) {
+    // Muammolilar tepaga: xato/to'xtagan, keyin ko'p restart bo'lganlar.
+    const ordered = processes.slice().sort((a, b) => {
+      const rank = (p) => (p.status !== 'online' ? 0 : (restartSeverity(p) ? 1 : 2));
+      return rank(a) - rank(b);
+    });
+    for (const p of ordered) {
       const row = document.createElement('div');
-      row.className = 'bot-row';
+      const sev = restartSeverity(p);
+      row.className = 'bot-row' + (sev ? ` restart-${sev}` : '');
       const statusClass = p.status === 'online' ? 'ok' : (p.status === 'errored' ? 'error' : 'warn');
       row.innerHTML = `
         <div class="bot-main">
@@ -1697,9 +1823,10 @@
           <span>${escapeHtml(PM2_STATUS_LABEL[p.status] || p.status || '?')}</span>
           <span>CPU ${p.cpu ?? 0}%</span>
           <span>${formatMem(p.memory)}</span>
-          <span>↻ ${p.restarts ?? 0}</span>
+          <span class="bot-restarts${sev ? ' ' + sev : ''}" ${sev ? `title="Ko'p qayta ishga tushgan — crash-loop bo'lishi mumkin"` : ''}>↻ ${p.restarts ?? 0}</span>
           <span>${formatUptime(p.uptime)}</span>
         </div>
+        ${sev === 'alert' ? '<div class="bot-warning">⚠️ Tez-tez qayta ishga tushyapti — loglarni tekshiring</div>' : ''}
         <div class="bot-actions">
           <button type="button" class="bot-logs-btn" title="Loglar">loglar</button>
           <button type="button" class="bot-restart-btn" title="Restart">restart</button>
@@ -1708,11 +1835,22 @@
       row.querySelector('.bot-name').textContent = p.name;
       row.querySelector('.bot-ns').textContent = p.namespace && p.namespace !== 'default' ? `(${p.namespace})` : '';
       row.querySelector('.bot-restart-btn').addEventListener('click', async () => {
-        if (!confirm(`"${p.name}" qayta ishga tushiriladi (bir necha soniyaga to'xtaydi). Davom etasizmi?`)) return;
+        const ok = await confirmDialog({
+          title: `"${p.name}" ni qayta ishga tushirish`,
+          message: "Jarayon bir necha soniyaga to'xtaydi, keyin o'zi ko'tariladi.",
+          confirmText: 'Restart',
+        });
+        if (!ok) return;
         await pm2Action(p.name, 'restart');
       });
       row.querySelector('.bot-stop-btn').addEventListener('click', async () => {
-        if (!confirm(`"${p.name}" TO'XTATILADI va qo'lda qayta ishga tushirmaguningizcha ishlamaydi. Davom etasizmi?`)) return;
+        const ok = await confirmDialog({
+          title: `"${p.name}" ni to'xtatish`,
+          message: "Jarayon TO'XTATILADI va qo'lda qayta ishga tushirmaguningizcha ishlamaydi.",
+          confirmText: "To'xtatish",
+          danger: true,
+        });
+        if (!ok) return;
         await pm2Action(p.name, 'stop');
       });
       row.querySelector('.bot-logs-btn').addEventListener('click', () => showBotLogs(p.name));
@@ -1731,6 +1869,49 @@
     }
   }
 
+  // ---------------- jonli loglar ----------------
+  // Avval loglar bir marta olinardi va statik turardi: bot xatosini
+  // kuzatayotganda "loglar" tugmasini qayta-qayta bosish kerak edi.
+  // Endi "jonli" rejimida yangi qatorlar o'zi kelib turadi (SSE).
+  let logStream = null;
+
+  function stopLogStream() {
+    if (logStream) {
+      logStream.close();
+      logStream = null;
+    }
+    if (liveLogBtn) liveLogBtn.classList.remove('on');
+  }
+
+  let liveLogBtn = null;
+
+  function startLogStream(name) {
+    stopLogStream();
+    // Oqim ochilganda mavjud matn saqlanadi, yangi qatorlar ustiga qo'shiladi.
+    logStream = new EventSource(`/api/pm2/${encodeURIComponent(name)}/logs/stream`);
+    liveLogBtn.classList.add('on');
+
+    logStream.onmessage = (e) => {
+      let chunk;
+      try { chunk = JSON.parse(e.data); } catch { return; }
+      // Foydalanuvchi yuqoriga chiqib o'qiyotgan bo'lsa pastga tortmaymiz.
+      const atBottom = fileViewerContent.scrollHeight - fileViewerContent.scrollTop
+        - fileViewerContent.clientHeight < 60;
+      fileViewerContent.textContent += chunk;
+      // Cheksiz o'smasin — oxirgi ~200KB yetarli.
+      if (fileViewerContent.textContent.length > 200000) {
+        fileViewerContent.textContent = fileViewerContent.textContent.slice(-150000);
+      }
+      if (atBottom) fileViewerContent.scrollTop = fileViewerContent.scrollHeight;
+    };
+    logStream.addEventListener('error', () => {
+      // Server xatosi yoki ulanish uzilishi — EventSource o'zi qayta ulanadi,
+      // lekin foydalanuvchiga holatni ko'rsatib qo'yamiz.
+      if (liveLogBtn) liveLogBtn.classList.remove('on');
+    });
+    logStream.addEventListener('end', () => stopLogStream());
+  }
+
   async function showBotLogs(name) {
     fileViewerName.textContent = `${name} — loglar`;
     fileDownloadBtn.removeAttribute('href');
@@ -1739,11 +1920,29 @@
     fileViewerContent.textContent = 'Yuklanmoqda...';
     currentFileEditable = false;
     setFileEditMode(false);
+
+    // "jonli" tugmasi fayl ko'ruvchi sarlavhasiga qo'shiladi (faqat loglar
+    // uchun; oddiy fayl ochilganda olib tashlanadi).
+    if (!liveLogBtn) {
+      liveLogBtn = document.createElement('button');
+      liveLogBtn.type = 'button';
+      liveLogBtn.className = 'live-log-btn';
+      liveLogBtn.textContent = 'jonli';
+      liveLogBtn.title = 'Yangi qatorlarni real vaqtda kuzatish';
+      fileViewerName.insertAdjacentElement('afterend', liveLogBtn);
+    }
+    liveLogBtn.classList.remove('hidden');
+    liveLogBtn.onclick = () => {
+      if (logStream) stopLogStream();
+      else startLogStream(name);
+    };
+
     openFileViewer();
     try {
       const res = await fetch(`/api/pm2/${encodeURIComponent(name)}/logs?lines=100`);
       const data = await res.json();
       fileViewerContent.textContent = res.ok ? (data.logs || '(bo\'sh)') : ('⚠️ ' + (data.error || 'Xatolik'));
+      fileViewerContent.scrollTop = fileViewerContent.scrollHeight;
     } catch {
       fileViewerContent.textContent = "Serverga ulanib bo'lmadi";
     }
@@ -1759,6 +1958,304 @@
     pm2StatusBadge.classList.remove('hidden');
     pm2StatusBadge.textContent = `${activeProjectPm2Name}: ${PM2_STATUS_LABEL[match.status] || match.status}`;
     pm2StatusBadge.classList.toggle('bad', match.status !== 'online');
+  }
+
+  // ================= I: loyihalar orasida tez almashish =================
+  // Avval loyiha almashtirish uchun: drawer och -> "loyihalar" tabi -> tanla.
+  // Endi topbar'dagi yo'lni bosish yetarli.
+
+  function closeProjectSwitcher() {
+    projectSwitcher.classList.add('hidden');
+    cwdLabel.setAttribute('aria-expanded', 'false');
+  }
+
+  function renderProjectSwitcher() {
+    projectSwitcher.innerHTML = '';
+    if (!projectsList.length) {
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = "Loyiha yo'q.";
+      projectSwitcher.appendChild(hint);
+      return;
+    }
+    for (const p of projectsList) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'switcher-row' + (p.id === activeProjectId ? ' active' : '');
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(p.id === activeProjectId));
+      const badge = p.pending > 0 ? 'ruxsat!' : (p.busy ? 'band' : '');
+      row.innerHTML = '<span class="switcher-label"></span><span class="switcher-path"></span>'
+        + (badge ? `<span class="row-badge ${p.pending > 0 ? 'pending' : 'busy'}">${badge}</span>` : '');
+      row.querySelector('.switcher-label').textContent = p.label;
+      row.querySelector('.switcher-path').textContent = p.path;
+      row.addEventListener('click', () => {
+        requestCloseOverlay('switcher');
+        if (p.id !== activeProjectId) {
+          browseRoot = null;
+          activeProjectId = p.id;
+          isSwitching = true;
+          send({ type: 'switch_project', id: p.id });
+        }
+      });
+      projectSwitcher.appendChild(row);
+    }
+  }
+
+  cwdLabel.addEventListener('click', () => {
+    if (!projectSwitcher.classList.contains('hidden')) {
+      requestCloseOverlay('switcher');
+      return;
+    }
+    renderProjectSwitcher();
+    projectSwitcher.classList.remove('hidden');
+    cwdLabel.setAttribute('aria-expanded', 'true');
+    openOverlay('switcher', closeProjectSwitcher);
+    fetchProjects().then(() => {
+      if (!projectSwitcher.classList.contains('hidden')) renderProjectSwitcher();
+    });
+  });
+
+  // ================= L: chatda qidirish =================
+  // Uzun sessiyada biror narsani topishning yagona yo'li brauzerning o'z
+  // Ctrl+F i edi — u esa telefonda PWA rejimida umuman yo'q.
+
+  let searchMatches = [];
+  let searchIndex = -1;
+
+  function clearSearchHighlights() {
+    for (const el of messagesEl.querySelectorAll('.search-hit')) {
+      el.classList.remove('search-hit', 'search-hit-active');
+    }
+    searchMatches = [];
+    searchIndex = -1;
+    searchCount.textContent = '';
+  }
+
+  function runSearch(term) {
+    clearSearchHighlights();
+    const q = term.trim().toLowerCase();
+    if (q.length < 2) return;
+    // Butun bloklarni belgilaymiz (matn tugunlarini bo'lakka bo'lmasdan) —
+    // shunda mavjud DOM va nusxa tugmalari buzilmaydi.
+    const blocks = messagesEl.querySelectorAll('.line, .tool-card, .system-note, .permission-card, .permission-resolved');
+    for (const b of blocks) {
+      if ((b.textContent || '').toLowerCase().includes(q)) {
+        b.classList.add('search-hit');
+        searchMatches.push(b);
+      }
+    }
+    if (searchMatches.length) {
+      searchIndex = searchMatches.length - 1; // eng oxirgisidan boshlaymiz
+      focusSearchMatch();
+    } else {
+      searchCount.textContent = '0';
+    }
+  }
+
+  function focusSearchMatch() {
+    searchMatches.forEach((m) => m.classList.remove('search-hit-active'));
+    const el = searchMatches[searchIndex];
+    if (!el) return;
+    el.classList.add('search-hit-active');
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    searchCount.textContent = `${searchIndex + 1}/${searchMatches.length}`;
+  }
+
+  function stepSearch(delta) {
+    if (!searchMatches.length) return;
+    searchIndex = (searchIndex + delta + searchMatches.length) % searchMatches.length;
+    focusSearchMatch();
+  }
+
+  function closeSearch() {
+    searchBar.classList.add('hidden');
+    clearSearchHighlights();
+    searchInput.value = '';
+  }
+
+  searchBtn.addEventListener('click', () => {
+    if (!searchBar.classList.contains('hidden')) {
+      requestCloseOverlay('search');
+      return;
+    }
+    searchBar.classList.remove('hidden');
+    searchInput.focus();
+    openOverlay('search', closeSearch);
+  });
+  searchClose.addEventListener('click', () => requestCloseOverlay('search'));
+  searchPrev.addEventListener('click', () => stepSearch(-1));
+  searchNext.addEventListener('click', () => stepSearch(1));
+
+  let searchDebounce = null;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => runSearch(searchInput.value), 180);
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      stepSearch(e.shiftKey ? -1 : 1);
+    }
+  });
+
+  // ================= F: tez buyruqlar =================
+  // 26 ta bot bilan ishlaganda takrorlanuvchi promptlar ko'p. Telefonda
+  // ularni har safar qo'lda yozish eng ko'p vaqt oladigan narsa edi.
+
+  const DEFAULT_QUICK_CMDS = [
+    { label: 'Botlar holati', text: 'Barcha PM2 jarayonlari holatini tekshir va muammolilarini ayt' },
+    { label: 'Xato loglar', text: 'Oxirgi xatolik loglarini ko\'rsat va sababini tushuntir' },
+    { label: 'Git holat', text: 'Bu loyihada git status va oxirgi 5 ta commitni ko\'rsat' },
+    { label: 'Disk joyi', text: 'Serverda disk va xotira holatini tekshir' },
+  ];
+
+  function loadQuickCmds() {
+    try {
+      const raw = localStorage.getItem('rootwebQuickCmds');
+      if (!raw) return DEFAULT_QUICK_CMDS.slice();
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : DEFAULT_QUICK_CMDS.slice();
+    } catch {
+      return DEFAULT_QUICK_CMDS.slice();
+    }
+  }
+
+  function saveQuickCmds(list) {
+    try { localStorage.setItem('rootwebQuickCmds', JSON.stringify(list)); } catch { /* noop */ }
+  }
+
+  let quickCmds = loadQuickCmds();
+
+  function renderQuickCmds() {
+    quickCmdsEl.innerHTML = '';
+    for (const cmd of quickCmds) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'quick-chip';
+      chip.textContent = cmd.label;
+      chip.title = cmd.text;
+      chip.addEventListener('click', () => {
+        input.value = cmd.text;
+        autoGrowInput();
+        input.focus();
+      });
+      // Uzoq bosish — o'chirish (telefonda kontekst menyusi o'rniga)
+      let pressTimer = null;
+      const startPress = () => {
+        pressTimer = setTimeout(async () => {
+          const ok = await confirmDialog({
+            title: `"${cmd.label}" ni o'chirish`,
+            message: cmd.text,
+            confirmText: "O'chirish",
+            danger: true,
+          });
+          if (!ok) return;
+          quickCmds = quickCmds.filter((c) => c !== cmd);
+          saveQuickCmds(quickCmds);
+          renderQuickCmds();
+        }, 600);
+      };
+      const cancelPress = () => clearTimeout(pressTimer);
+      chip.addEventListener('touchstart', startPress, { passive: true });
+      chip.addEventListener('touchend', cancelPress);
+      chip.addEventListener('touchmove', cancelPress);
+      chip.addEventListener('mousedown', startPress);
+      chip.addEventListener('mouseup', cancelPress);
+      chip.addEventListener('mouseleave', cancelPress);
+      quickCmdsEl.appendChild(chip);
+    }
+
+    const addChip = document.createElement('button');
+    addChip.type = 'button';
+    addChip.className = 'quick-chip quick-chip-add';
+    addChip.textContent = '+';
+    addChip.title = "Joriy matnni tez buyruq sifatida saqlash";
+    addChip.setAttribute('aria-label', 'Tez buyruq qo\'shish');
+    addChip.addEventListener('click', async () => {
+      const text = input.value.trim();
+      if (!text) {
+        addSystemNote('⚠️ Avval yozuv maydoniga matn kiriting, keyin + ni bosing');
+        return;
+      }
+      const label = await promptDialog({
+        title: 'Tez buyruq qo\'shish',
+        message: text,
+        value: text.slice(0, 24),
+        placeholder: 'Qisqa nom',
+        confirmText: 'Saqlash',
+      });
+      if (!label) return;
+      quickCmds.push({ label, text });
+      saveQuickCmds(quickCmds);
+      renderQuickCmds();
+    });
+    quickCmdsEl.appendChild(addChip);
+  }
+
+  function setQuickCmdsVisible(v) {
+    quickCmdsEl.classList.toggle('hidden', !v);
+    quickCmdsBtn.classList.toggle('on', v);
+    try { localStorage.setItem('rootwebQuickCmdsOpen', v ? '1' : '0'); } catch { /* noop */ }
+    if (v) renderQuickCmds();
+  }
+
+  quickCmdsBtn.addEventListener('click', () => {
+    setQuickCmdsVisible(quickCmdsEl.classList.contains('hidden'));
+  });
+
+  try {
+    setQuickCmdsVisible(localStorage.getItem('rootwebQuickCmdsOpen') === '1');
+  } catch {
+    setQuickCmdsVisible(false);
+  }
+
+  // ================= O: swipe bilan drawer ochish/yopish =================
+  // Telefonda o'ng chetdan chapga surish — drawer ochiladi; drawer ustida
+  // o'ngga surish — yopiladi.
+  const SWIPE_EDGE_PX = 28;
+  const SWIPE_MIN_PX = 60;
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchTracking = false;
+
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    const fromRightEdge = touchStartX > window.innerWidth - SWIPE_EDGE_PX;
+    const inDrawer = drawer.classList.contains('open') && drawer.contains(e.target);
+    touchTracking = fromRightEdge || inDrawer;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!touchTracking) return;
+    touchTracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = Math.abs(t.clientY - touchStartY);
+    // Vertikal harakat gorizontaldan katta bo'lsa — bu skroll, swipe emas.
+    if (dy > Math.abs(dx)) return;
+    if (dx < -SWIPE_MIN_PX && !drawer.classList.contains('open')) {
+      openDrawer();
+      fetchProjects();
+    } else if (dx > SWIPE_MIN_PX && drawer.classList.contains('open')) {
+      closeDrawer();
+    }
+  }, { passive: true });
+
+  // ================= K: service worker (PWA) =================
+  // Ilova qobigi keshlanadi — internetsiz ham ochiladi va qayta yuklash
+  // sezilarli tez boladi. API va HTML hech qachon keshdan berilmaydi
+  // (sw.js ichidagi izohga qara).
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        // SW ixtiyoriy — royxatdan otmasa ilova odatdagidek ishlayveradi.
+        console.warn('Service worker royxatdan otmadi:', err && err.message);
+      });
+    });
   }
 
   fetchProjects();

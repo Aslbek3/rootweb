@@ -2,6 +2,8 @@ node_modules/
 .env
 *.log
 server/data/
+# Claude ishlaydigan standart papka (PROJECT_DIR) — foydalanuvchi fayllari
+workspace/
 CLAUDE.md
 .env.bak_*
 .env.*

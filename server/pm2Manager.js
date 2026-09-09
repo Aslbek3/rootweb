@@ -9,7 +9,9 @@
 // shell orqali EMAS, `execFile` orqali argument sifatida uzatiladi, shuning
 // uchun buyruq in'ektsiyasi (`;`, `&&`, backtick va h.k.) mumkin emas.
 
-const { execFile } = require('child_process');
+// `spawn` — jonli log oqimi uchun (`streamLogs`). `execFile` kabi u ham
+// shellsiz ishlaydi, ya'ni buyruq in'ektsiyasi mumkin emas.
+const { execFile, spawn } = require('child_process');
 
 function run(args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -74,4 +76,49 @@ async function logs(name, lines) {
   return stdout;
 }
 
-module.exports = { list, restart, stop, logs };
+// ---------------- jonli loglar (tail -f) ----------------
+//
+// `logs()` bitta suratni oladi (`--nostream`). Bot xatosini kuzatayotganda
+// esa oqim kerak: qayta-qayta so'rov yubormasdan yangi qatorlar kelib
+// tursin. Bu yerda `pm2 logs` `--nostream`SIZ ishga tushiriladi, ya'ni
+// `tail -f` kabi abadiy oqadi — shuning uchun uni to'xtatish MAJBURIY
+// (qaytariladigan funksiya orqali).
+
+// Bir vaqtda ochilgan oqimlar soni. Har biri alohida `pm2` jarayoni
+// demak — cheklamasak, ochiq qolgan tablar serverni jarayonlar bilan
+// to'ldirib yuborishi mumkin.
+const MAX_CONCURRENT_STREAMS = 4;
+let activeStreams = 0;
+
+function streamLogs(name, onData, onEnd) {
+  assertValidName(name);
+  if (activeStreams >= MAX_CONCURRENT_STREAMS) {
+    throw new Error("Juda ko'p jonli log oqimi ochiq — birini yoping");
+  }
+  activeStreams += 1;
+
+  // `--lines 20` — ulanish paytida oxirgi bir necha qator darhol ko'rinsin.
+  const child = spawn('pm2', ['logs', name, '--raw', '--lines', '20'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let closed = false;
+  const finish = (reason) => {
+    if (closed) return;
+    closed = true;
+    activeStreams = Math.max(0, activeStreams - 1);
+    try { child.kill('SIGTERM'); } catch { /* allaqachon o'lgan bo'lishi mumkin */ }
+    if (onEnd) onEnd(reason);
+  };
+
+  child.stdout.on('data', (d) => onData(d.toString('utf8')));
+  child.stderr.on('data', (d) => onData(d.toString('utf8')));
+  child.on('error', (err) => finish(err.message));
+  child.on('exit', () => finish(null));
+
+  // Chaqiruvchi ulanish uzilganda shuni chaqirishi SHART, aks holda
+  // `pm2 logs` jarayoni abadiy qolib ketadi.
+  return finish;
+}
+
+module.exports = { list, restart, stop, logs, streamLogs };

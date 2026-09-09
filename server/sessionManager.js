@@ -15,6 +15,31 @@ const SAFE_TOOLS = new Set(['Read', 'Grep', 'Glob', 'TodoWrite']);
 // allowlist+denylist policy in `bashPolicy.js`. Anything else still asks.
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit']);
 
+// Muloqot uslubi ko'rsatmasi — har bir sessiyaning tizim promptiga
+// qo'shiladi (`systemPrompt.append`).
+//
+// Nega kerak: bu ilova telefondan, dasturchi bo'lmagan odam tomonidan
+// ishlatiladi. Terminaldagi Claude Code ketma-ket tool chaqirib, orasida
+// hech narsa yozmasligi mumkin — u yerda buyruq va chiqish baribir
+// ko'rinib turadi. Bu yerda esa foydalanuvchi faqat tool kartochkalarini
+// ko'radi va "nima bo'layapti, nimaga ruxsat berayapman?" degan holatga
+// tushadi. Shuning uchun izohlab borish talab qilinadi.
+const UI_STYLE_PROMPT = `Muloqot uslubi (bu ilova uchun majburiy):
+
+- Foydalanuvchi bilan O'ZBEK TILIDA gaplash.
+- Foydalanuvchi dasturchi EMAS va bu ilovani telefondan ishlatadi.
+- Tool (Bash, Read, Edit va h.k.) ishlatishdan OLDIN bir-ikki jumlada nima
+  qilmoqchi ekaningni va nega kerakligini yoz. Jim ishlama — foydalanuvchi
+  ekranda faqat kartochkalarni ko'radi, buyruqning o'zini emas.
+- Bash tool'ining "description" maydonini ham O'ZBEKCHA va oddiy tilda yoz
+  (masalan "Botlar ro'yxatini olaman" — "Run pm2 jlist" emas). Bu matn
+  foydalanuvchining ekranida to'g'ridan-to'g'ri ko'rinadi.
+- Xavfli yoki qaytarib bo'lmaydigan amal (o'chirish, to'xtatish, qayta
+  yozish) oldidan nima yo'qolishi mumkinligini ochiq ayt.
+- Texnik atama ishlatsang, qavs ichida bir og'iz izohla.
+- Ish tugagach qisqacha xulosa qil: nima qilindi va natija nima bo'ldi.
+- Uzun ro'yxat va kod devorlarini tashlama — telefonda o'qish qiyin.`;
+
 // How many past events to keep for replay when a client (re)connects.
 const MAX_HISTORY = 500;
 
@@ -89,7 +114,7 @@ let sessionsMeta = readJson(SESSIONS_META_FILE, {});
 // `sessionsMeta`ni (BARCHA loyihalarning to'liq tarixi bilan) serializatsiya
 // qilib, sinxron diskka yozardi. Claude bitta javobda 20-50 ta voqea yuboradi
 // (matn bloklari, tool_use, tool_result), ya'ni 30 loyiha × 500 voqea har bir
-// bloкда qaytadan yozilardi — bu event loop'ni bloklab, BOSHQA barcha WS
+// blokda qaytadan yozilardi — bu event loop'ni bloklab, BOSHQA barcha WS
 // sessiyalarini ham sekinlashtirardi.
 //
 // Endi yozuv 1 soniyaga yig'iladi. Ma'lumot yo'qolmasligi uchun `flush()`
@@ -230,17 +255,24 @@ function createSession(projectId, cwd, description) {
       // uzatilsa, SDK ba'zi toollarni biz ko'rmasdan o'zi tasdiqlab yuborardi,
       // ya'ni ikkita haqiqat manbai paydo bo'lardi.
       permissionMode: permissionMode === 'plan' ? 'plan' : 'default',
-      // Loyiha tavsifi ("loyihalar" panelidagi description maydoni) bo'lsa,
-      // Claude Code'ning standart tizim promptiga qo'shimcha sifatida
-      // qo'shiladi — shuning uchun sessiya boshlanishi bilanoq Claude bu
-      // qaysi loyiha/bot ekanini, uning ma'lum xususiyatlarini biladi va
-      // foydalanuvchi har safar qayta tushuntirishi shart bo'lmaydi.
-      // `preset: 'claude_code'` standart xatti-harakatni (fayl-tizim
-      // xabardorligi, tool ishlatish uslubi va h.k.) saqlab qoladi — faqat
-      // ustiga qo'shiladi, almashtirmaydi.
-      ...(description && description.trim()
-        ? { systemPrompt: { type: 'preset', preset: 'claude_code', append: `Loyiha haqida kontekst:\n${description.trim()}` } }
-        : {}),
+      // Tizim promptiga qo'shimcha. `preset: 'claude_code'` standart
+      // xatti-harakatni (fayl-tizim xabardorligi, tool ishlatish uslubi va
+      // h.k.) saqlab qoladi — faqat ustiga qo'shiladi, almashtirmaydi.
+      //
+      // Ikki qism bor:
+      //  1) MULOQOT USLUBI — har doim qo'shiladi. Bu ilova telefondan,
+      //     dasturchi bo'lmagan odam tomonidan ishlatiladi. Terminaldagi
+      //     Claude Code jim ishlashi mumkin, bu yerda esa foydalanuvchi
+      //     faqat tool kartochkalarini ko'rib "nima bo'layapti?" degan
+      //     holatga tushadi. Shuning uchun izohlab borish TALAB qilinadi.
+      //  2) LOYIHA KONTEKSTI — "loyihalar" panelidagi `description`.
+      systemPrompt: {
+        type: 'preset',
+        preset: 'claude_code',
+        append: [UI_STYLE_PROMPT, ...(description && description.trim()
+          ? [`Loyiha haqida kontekst:\n${description.trim()}`]
+          : [])].join('\n\n'),
+      },
       // Reattach to the same Claude session across a server restart (see
       // sessionsMeta above). Absent on a project's very first-ever session,
       // and self-healing (cleared below) if the saved id ever fails to
