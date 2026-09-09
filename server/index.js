@@ -27,6 +27,7 @@ const sessionManager = require('./sessionManager');
 const authManager = require('./authManager');
 const pm2Manager = require('./pm2Manager');
 const auditLog = require('./auditLog');
+const authLib = require('./auth');
 
 const PORT = process.env.PORT || 3210;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -36,6 +37,11 @@ const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toSt
 // Set to '1' when running behind a reverse proxy (nginx) that terminates HTTPS,
 // so Express reads X-Forwarded-Proto and marks the session cookie Secure.
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+// Ilova ochiladigan manzil, masalan `https://rootweb.example`. Origin
+// tekshiruvi uchun ishlatiladi; ko'rsatilmasa so'rovning o'z `Host`
+// sarlavhasi bilan solishtiriladi (nginx `proxy_set_header Host $host`
+// qilgani uchun bu ham to'g'ri ishlaydi).
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || '';
 
 if (APP_PASSWORDS.length === 0) {
   console.error('Xatolik: .env faylida APP_PASSWORD ko\'rsatilmagan.');
@@ -47,86 +53,148 @@ if (APP_PASSWORDS.length === 0) {
 // resetting its position if the user already switched to something else).
 projects.seed(PROJECT_DIR, 'workspace');
 
+const { issueToken, verifyToken } = authLib.createAuth(SESSION_SECRET);
+
 const app = express();
 if (TRUST_PROXY) app.set('trust proxy', 1);
+app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 
-// Unauthenticated, CORS-open health check so another claude-web instance's
-// "Qurilmalar" (devices) list can tell whether this machine is reachable
-// without needing to be logged in first. Only leaks the hostname.
+// ---------------- xavfsizlik sarlavhalari ----------------
+// Avval hech qanday sarlavha yo'q edi. Eng muhimi `frame-ancestors`/
+// `X-Frame-Options`: usiz hujumchi sayt rootweb'ni ko'rinmas iframe'da ochib,
+// foydalanuvchini "Ruxsat berish" tugmasini bosishga aldashi mumkin edi
+// (clickjacking) — ya'ni Bash siyosatini foydalanuvchining o'z qo'li bilan
+// chetlab o'tish.
+//
+// `script-src 'self'` — sahifalarda inline `<script>` qolmagani uchun
+// (hammasi alohida .js fayllarga chiqarildi) va highlight.js endi CDN'dan
+// emas, `public/vendor/`dan yuklangani uchun qat'iy siyosat mumkin.
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self'",
+    // `style-src`da 'unsafe-inline' qoladi: `auth.html`dagi <style> bloki va
+    // JS'dan qo'yiladigan inline uslublar (textarea balandligi, progress-bar
+    // kengligi) shusiz ishlamaydi. Bu XSS uchun sezilarli vektor emas.
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "connect-src 'self' ws: wss:",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join('; '));
+  if (req.secure) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// Unauthenticated health check so another claude-web instance's "Qurilmalar"
+// (devices) list can tell whether this machine is reachable without needing to
+// be logged in first.
+//
+// Hostname endi faqat autentifikatsiyadan o'tganlarga ko'rsatiladi — avval u
+// `Access-Control-Allow-Origin: *` bilan birga har qanday saytga oshkor
+// bo'lardi.
 app.get('/api/ping', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.json({ ok: true, host: os.hostname() });
+  res.json({ ok: true, ...(isAuthed(req) ? { host: os.hostname() } : {}) });
 });
 
 // ---------------- auth (signed cookie, single shared password) ----------------
 
-function sign(value) {
-  const h = crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('hex');
-  return `${value}.${h}`;
-}
-
-function verify(signed) {
-  if (!signed) return null;
-  const idx = signed.lastIndexOf('.');
-  if (idx < 0) return null;
-  const value = signed.slice(0, idx);
-  const sig = signed.slice(idx + 1);
-  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('hex');
-  const sigBuf = Buffer.from(sig);
-  const expBuf = Buffer.from(expected);
-  if (sigBuf.length !== expBuf.length) return null;
-  return crypto.timingSafeEqual(sigBuf, expBuf) ? value : null;
-}
-
-function timingSafeEqualStr(a, b) {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
-}
-
-function parseCookies(req) {
-  const header = req.headers.cookie;
-  const out = {};
-  if (!header) return out;
-  header.split(';').forEach((part) => {
-    const idx = part.indexOf('=');
-    if (idx < 0) return;
-    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
-  });
-  return out;
-}
-
 function isAuthed(req) {
-  return verify(parseCookies(req).session) === 'ok';
+  return verifyToken(authLib.parseCookies(req).session);
+}
+
+function sessionCookie(req, value, maxAgeSec) {
+  const secure = req.secure ? '; Secure' : '';
+  return `session=${encodeURIComponent(value)}; HttpOnly; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax${secure}`;
+}
+
+// So'rov shu saytning o'zidan kelganmi?
+//
+// Brauzer cross-site so'rovda `Origin`ni HAR DOIM qo'shadi, shuning uchun
+// mos kelmagan Origin — ishonchli "boshqa saytdan" belgisi. `Origin` umuman
+// bo'lmasa ruxsat beramiz: curl/skript kabi brauzer bo'lmagan mijozlar uni
+// yubormaydi, va ular uchun cookie'ni avtomatik biriktiruvchi brauzer
+// mexanizmi ham yo'q (ya'ni CSRF xavfi yo'q).
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  let originHost;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return false;
+  }
+  const expected = PUBLIC_ORIGIN ? (() => { try { return new URL(PUBLIC_ORIGIN).host; } catch { return ''; } })() : req.headers.host;
+  return !!expected && originHost === expected;
 }
 
 app.post('/api/login', (req, res) => {
+  const ip = req.ip || 'unknown';
+
+  // ⚠️ Ilova darajasidagi cheklov — fail2ban'ga bog'liq, `server/auth.js`dagi
+  // izohga qara. Chegaraga yetganda 401 EMAS, 429 qaytariladi, shunda parolni
+  // adashib teruvchi haqiqiy foydalanuvchi fail2ban tomonidan 24 soatga
+  // IP-ban qilinmaydi.
+  const gate = authLib.checkLoginAllowed(ip);
+  if (!gate.allowed) {
+    auditLog.log('login_throttled', { ip });
+    res.setHeader('Retry-After', String(gate.retryAfterSec));
+    return res.status(429).json({ error: `Juda ko'p urinish. ${gate.retryAfterSec} soniyadan keyin qayta urinib ko'ring.` });
+  }
+
   const password = req.body && req.body.password;
-  if (typeof password !== 'string' || !APP_PASSWORDS.some((p) => timingSafeEqualStr(password, p))) {
-    auditLog.log('login_failed', { ip: req.ip });
+  if (typeof password !== 'string' || !APP_PASSWORDS.some((p) => authLib.timingSafeEqualStr(password, p))) {
+    authLib.recordLoginFailure(ip);
+    auditLog.log('login_failed', { ip });
     return res.status(401).json({ error: "Parol noto'g'ri" });
   }
-  const token = sign('ok');
-  const secure = req.secure ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `session=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax${secure}`);
-  auditLog.log('login_success', { ip: req.ip });
+
+  authLib.clearLoginFailures(ip);
+  res.setHeader('Set-Cookie', sessionCookie(req, issueToken(), Math.floor(authLib.SESSION_MAX_AGE_MS / 1000)));
+  auditLog.log('login_success', { ip });
   res.json({ ok: true });
 });
 
+// Chiqish endi HAQIQATAN sessiyani bekor qiladi: `revokeAll()` diskdagi
+// `sessionVersion`ni oshiradi, ya'ni o'g'irlangan/nusxa olingan cookie ham
+// shu zahoti yaroqsiz bo'ladi. Avval faqat brauzerdagi cookie o'chirilardi va
+// tokenning o'zi abadiy amal qilaverardi.
 app.post('/api/logout', (req, res) => {
-  const secure = req.secure ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secure}`);
+  if (!originAllowed(req)) return res.status(403).json({ error: 'origin rad etildi' });
+  authLib.revokeAll();
+  auditLog.log('logout', { ip: req.ip });
+  res.setHeader('Set-Cookie', sessionCookie(req, '', 0));
   res.json({ ok: true });
 });
 
-const OPEN_PATHS = new Set(['/login.html', '/api/login', '/style.css', '/manifest.json', '/icon.svg']);
+// `/api/login` bu yerda YO'Q — u yuqorida, shu middleware'dan oldin
+// ro'yxatdan o'tgan, ya'ni bu ro'yxatga qo'shilsa o'lik yozuv bo'lib qolardi.
+const OPEN_PATHS = new Set(['/login.html', '/login.js', '/style.css', '/manifest.json', '/icon.svg']);
 
 app.use((req, res, next) => {
-  if (OPEN_PATHS.has(req.path) || isAuthed(req)) return next();
-  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'unauthorized' });
-  return res.redirect('/login.html');
+  if (OPEN_PATHS.has(req.path)) return next();
+  if (!isAuthed(req)) {
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'unauthorized' });
+    return res.redirect('/login.html');
+  }
+  // Holatni o'zgartiruvchi so'rovlar faqat shu saytning o'zidan kelishi kerak
+  // (CSRF himoyasi). `SameSite=Lax` cookie allaqachon ko'p holatni yopadi,
+  // lekin u brauzerga bog'liq kafolat — bu esa serverdagi tekshiruv.
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !originAllowed(req)) {
+    auditLog.log('origin_rejected', { ip: req.ip, path: req.path, origin: req.headers.origin });
+    return res.status(403).json({ error: 'origin rad etildi' });
+  }
+  return next();
 });
 
 // ---------------- device info ----------------
@@ -218,6 +286,9 @@ app.delete('/api/projects/:id', (req, res) => {
     return res.status(400).json({ error: "Oxirgi loyihani o'chirib bo'lmaydi" });
   }
   const project = projects.getById(req.params.id);
+  // Mavjud bo'lmagan id uchun avval ham `200 OK` qaytarilardi va audit-logga
+  // `label: undefined` yozilardi — endi ochiq-oydin 404.
+  if (!project) return res.status(404).json({ error: 'Loyiha topilmadi' });
   // Loyiha ro'yxatdan o'chishidan OLDIN uning faol Claude sessiyasini (agar
   // bo'lsa) to'liq yopamiz — aks holda ro'yxatdan yo'qolgan, lekin hali
   // ishlab turgan `claude` subprocess RAM'da abadiy "zombi" bo'lib qoladi
@@ -229,7 +300,7 @@ app.delete('/api/projects/:id', (req, res) => {
   // qilmaydi, fayllar ham diskda qoladi.
   sessionManager.resetSession(req.params.id);
   projects.remove(req.params.id);
-  auditLog.log('project_deleted', { projectId: req.params.id, label: project && project.label, path: project && project.path });
+  auditLog.log('project_deleted', { projectId: req.params.id, label: project.label, path: project.path });
   res.json({ ok: true });
 });
 
@@ -278,10 +349,15 @@ app.get('/api/audit', (req, res) => {
 });
 
 // Fayllar API'si loyiha (`projectId`) YOKI to'g'ridan-to'g'ri absolyut yo'l
-// (`root`) orqali ishlaydi — ikkinchisi "Papkalar" yorliqlari (istalgan VPS
-// yo'liga tezkor kirish) uchun kerak. rootweb izolyatsiyasiz (root sifatida)
-// ishlagani uchun bu yangi xavf sinfi emas — Bash tooli allaqachon butun
-// tizimga cheklanmagan yetadi (`CLAUDE.md`ga qarang).
+// (`root`) orqali ishlaydi — ikkinchisi "/root'ga o'tish" kabi tezkor
+// yo'llar uchun kerak. rootweb izolyatsiyasiz (root sifatida) ishlagani
+// uchun bu yangi xavf sinfi emas — Bash tooli allaqachon butun tizimga
+// cheklanmagan yetadi (`CLAUDE.md`ga qarang).
+//
+// ⚠️ LEKIN kuzatuvchanlik jihatidan farq bor edi: Bash orqali qilingan ish
+// audit-logga tushadi, fayl API orqali qilingani esa tushmasdi. Ya'ni
+// `DELETE /api/file?root=/&file=etc` — na tasdiq, na iz. Endi barcha
+// o'zgartiruvchi fayl amallari `auditLog`ga yoziladi (pastga qara).
 function resolveBrowseRoot(req) {
   if (req.query.projectId) {
     const project = projects.getById(req.query.projectId);
@@ -318,7 +394,9 @@ app.post('/api/files/mkdir', (req, res) => {
   if (!root) return res.status(404).json({ error: 'Loyiha/papka topilmadi' });
   const { name } = req.body || {};
   try {
-    res.json({ ok: true, ...fileApi.mkdir(root, req.query.dir || '.', name) });
+    const out = fileApi.mkdir(root, req.query.dir || '.', name);
+    auditLog.log('file_mkdir', { ip: req.ip, root, dir: req.query.dir || '.', name: out.name });
+    res.json({ ok: true, ...out });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -329,6 +407,7 @@ app.delete('/api/file', (req, res) => {
   if (!root) return res.status(404).json({ error: 'Loyiha/papka topilmadi' });
   try {
     fileApi.deleteEntry(root, req.query.file || '');
+    auditLog.log('file_delete', { ip: req.ip, root, file: req.query.file || '' });
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err.code === 'ENOENT' ? 'Topilmadi' : err.message });
@@ -340,7 +419,9 @@ app.post('/api/file/rename', (req, res) => {
   if (!root) return res.status(404).json({ error: 'Loyiha/papka topilmadi' });
   const { newName } = req.body || {};
   try {
-    res.json({ ok: true, ...fileApi.renameEntry(root, req.query.file || '', newName) });
+    const out = fileApi.renameEntry(root, req.query.file || '', newName);
+    auditLog.log('file_rename', { ip: req.ip, root, file: req.query.file || '', newName: out.name });
+    res.json({ ok: true, ...out });
   } catch (err) {
     res.status(400).json({ error: err.code === 'ENOENT' ? 'Topilmadi' : err.message });
   }
@@ -363,17 +444,44 @@ const upload = multer({
     },
     filename: (req, file, cb) => {
       // Faqat fayl nomining o'zi (papka segmentlarisiz) — path traversal'dan himoya.
-      const base = path.basename(file.originalname).replace(/[\x00-\x1f]/g, '').trim();
-      cb(null, base || `fayl-${Date.now()}`);
+      const base = path.basename(file.originalname).replace(/[\x00-\x1f]/g, '').trim()
+        || `fayl-${Date.now()}`;
+      // Mavjud faylni JIMGINA qayta yozib yubormaymiz. Avval shunday edi va
+      // `.env` yoki `server/index.js` ustiga tasodifan yozib yuborish real
+      // xavf edi — `mkdir`/`rename` esa allaqachon "allaqachon mavjud" deb
+      // xato qaytarardi, ya'ni o'zaro nomuvofiqlik ham bor edi.
+      // Endi nomga `-1`, `-2` ... qo'shiladi.
+      try {
+        const dir = fileApi.resolveWithin(resolveBrowseRoot(req), req.query.dir || '.');
+        cb(null, uniqueName(dir, base));
+      } catch (err) {
+        cb(err);
+      }
     },
   }),
   limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
 });
 
+// `dir` ichida band bo'lmagan nom tanlaydi: "hisobot.pdf" band bo'lsa
+// "hisobot-1.pdf", u ham band bo'lsa "hisobot-2.pdf" ...
+function uniqueName(dir, base) {
+  if (!fs.existsSync(path.join(dir, base))) return base;
+  const ext = path.extname(base);
+  const stem = base.slice(0, base.length - ext.length);
+  for (let i = 1; i < 1000; i += 1) {
+    const candidate = `${stem}-${i}${ext}`;
+    if (!fs.existsSync(path.join(dir, candidate))) return candidate;
+  }
+  return `${stem}-${Date.now()}${ext}`;
+}
+
 app.post('/api/files/upload', (req, res) => {
   upload.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'Fayl yuborilmadi' });
+    auditLog.log('file_upload', {
+      ip: req.ip, dir: req.query.dir || '.', name: req.file.filename, size: req.file.size,
+    });
     res.json({ ok: true, name: req.file.filename, size: req.file.size });
   });
 });
@@ -403,7 +511,9 @@ app.put('/api/file', (req, res) => {
     return res.status(400).json({ error: "Fayl matni kiritilmagan" });
   }
   try {
-    res.json({ ok: true, ...fileApi.writeFileSafe(root, req.query.file || '', content) });
+    const out = fileApi.writeFileSafe(root, req.query.file || '', content);
+    auditLog.log('file_write', { ip: req.ip, root, file: req.query.file || '', size: out.size });
+    res.json({ ok: true, ...out });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -435,10 +545,32 @@ app.post('/api/auth/submit', (req, res) => {
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+// maxPayload — bitta WS xabari uchun chegara. Avval `ws`ning standart 100MB'i
+// amal qilardi; rasm biriktirish uchun ~40MB (6 × 7MB) dan ortig'i hech qachon
+// kerak emas.
+const wss = new WebSocketServer({ noServer: true, maxPayload: 48 * 1024 * 1024 });
 
+// ⚠️ WebSocket handshake'ida `Origin` tekshiruvi — eng jiddiy tuzatilgan
+// xato shu.
+//
+// WebSocket Same-Origin Policy'ga BO'YSUNMAYDI: siz rootweb'ga login qilgan
+// holda istalgan boshqa saytga kirsangiz, o'sha sayt shunchaki
+// `new WebSocket('wss://<domen>/ws')` ocha olardi — cookie avtomatik
+// biriktirilardi — va keyin `{type:'chat', text:'...'}` yuborib butun VPS'da
+// buyruq bajartira olardi (standart rejim "avto" bo'lgani uchun ko'pi
+// so'rovsiz ketardi), javoblarni ham o'qiy olardi. Bu Cross-Site WebSocket
+// Hijacking (CSWSH) deb ataladi.
+//
+// Brauzer WS handshake'ida `Origin`ni HAR DOIM yuboradi, shuning uchun bu
+// yerda uning MAVJUDLIGI ham talab qilinadi (HTTP so'rovlaridan farqli):
+// brauzer bo'lmagan mijoz (masalan test skripti) `Origin` sarlavhasini
+// o'zi qo'shishi kerak.
 server.on('upgrade', (req, socket, head) => {
-  if (req.url !== '/ws' || !isAuthed(req)) {
+  const ok = req.url === '/ws' && isAuthed(req) && req.headers.origin && originAllowed(req);
+  if (!ok) {
+    if (req.headers.origin && !originAllowed(req)) {
+      auditLog.log('ws_origin_rejected', { origin: req.headers.origin, ip: req.socket.remoteAddress });
+    }
     socket.destroy();
     return;
   }
@@ -490,9 +622,14 @@ async function handleConnection(ws) {
     try { msg = JSON.parse(data.toString()); } catch { return; }
 
     if (msg.type === 'chat' && typeof msg.text === 'string') {
+      // `.slice(0, 6)` — rasm SONI ham cheklanadi. Avval faqat har bir
+      // rasmning hajmi tekshirilardi, soni emas: mijoz 1000 ta 7MB'lik rasm
+      // yuborsa hammasi xotiraga olinardi (`pushUserMessage` faqat keyinroq
+      // 6 tagacha kesardi, ya'ni juda kech).
       const images = Array.isArray(msg.images)
         ? msg.images.filter((img) => img && typeof img.data === 'string' && typeof img.mediaType === 'string'
             && img.mediaType.startsWith('image/') && img.data.length < 7 * 1024 * 1024) // ~5MB decoded
+          .slice(0, 6)
         : [];
       if (msg.text.trim() || images.length) {
         currentSession.pushUserMessage(msg.text, images);
@@ -514,6 +651,11 @@ async function handleConnection(ws) {
     } else if (msg.type === 'clear_chat') {
       const project = projects.getById(currentSession.projectId);
       if (project) {
+        // Avval o'zimizni sessiyadan uzamiz, keyin reset qilamiz: shunda
+        // `resetSession` ichidagi `invalidate()` xabari BOSHQA ulangan
+        // klientlarga (masalan kompyuterdagi ochiq tab) boradi, bizga emas —
+        // biz pastda darhol yangi `session_state` olamiz.
+        currentSession.detach(ws);
         sessionManager.resetSession(project.id);
         auditLog.log('chat_cleared', { projectId: project.id, label: project.label });
         attachToProject(project);

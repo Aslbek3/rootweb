@@ -87,14 +87,74 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  // ⚠️ Qo'shtirnoqlar ham escape qilinadi. Avval faqat `& < >` almashtirilardi,
+  // lekin funksiya ba'zi joyda ATRIBUT ichida ishlatilardi (masalan
+  // `alt="${escapeHtml(att.name)}"`) — u yerda `"` atributdan chiqib ketib
+  // XSS'ga yo'l ochardi. Matn konteksti uchun mo'ljallangan funksiyani atribut
+  // kontekstida ishlatish — sinf darajasidagi xato, shuning uchun funksiyaning
+  // o'zi ham to'liq qilindi.
   function escapeHtml(str) {
-    return str
+    return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
-  // Minimal markdown: fenced code blocks, inline code, bold, italic, paragraphs.
+  // Minimal markdown: kod bloklari, inline kod, qalin, kursiv, sarlavhalar,
+  // ro'yxatlar, xatboshi.
+  //
+  // Sarlavha (`## ...`) va ro'yxat (`- ...`) qo'llab-quvvatlanmagani uchun
+  // Claude javoblarining katta qismi xom markdown bo'lib ko'rinardi; izohda
+  // esa "italic" deyilgan bo'lsa-da, u ham amalga oshirilmagan edi.
+  function renderInline(seg) {
+    return seg
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      // Kursiv — `**qalin**`dan keyin qo'llanadi, shunda ular to'qnashmaydi.
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  }
+
+  // Bitta blokni (kod bloklari orasidagi matnni) HTML'ga aylantiradi.
+  function renderBlock(text) {
+    const lines = text.split('\n');
+    let html = '';
+    let listOpen = false;
+    let paragraph = [];
+
+    const flushParagraph = () => {
+      if (!paragraph.length) return;
+      html += `<p>${renderInline(paragraph.join('<br>'))}</p>`;
+      paragraph = [];
+    };
+    const closeList = () => {
+      if (listOpen) { html += '</ul>'; listOpen = false; }
+    };
+
+    for (const line of lines) {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+      if (heading) {
+        flushParagraph(); closeList();
+        const level = Math.min(6, heading[1].length + 2); // ## -> h4, kichikroq ko'rinsin
+        html += `<h${level}>${renderInline(heading[2])}</h${level}>`;
+      } else if (bullet) {
+        flushParagraph();
+        if (!listOpen) { html += '<ul>'; listOpen = true; }
+        html += `<li>${renderInline(bullet[1])}</li>`;
+      } else if (!line.trim()) {
+        flushParagraph(); closeList();
+      } else {
+        closeList();
+        paragraph.push(line);
+      }
+    }
+    flushParagraph();
+    closeList();
+    return html;
+  }
+
   function renderMarkdown(raw) {
     const text = escapeHtml(raw);
     const parts = text.split(/```([\s\S]*?)```/g);
@@ -108,12 +168,7 @@
         }
         html += `<pre><code>${block}</code></pre>`;
       } else {
-        let seg = parts[i]
-          .replace(/`([^`]+)`/g, '<code>$1</code>')
-          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-          .replace(/\n{2,}/g, '</p><p>')
-          .replace(/\n/g, '<br>');
-        html += `<p>${seg}</p>`;
+        html += renderBlock(parts[i]);
       }
     }
     return html;
@@ -517,6 +572,16 @@
         setBusy(false);
         addSystemNote('⚠️ ' + msg.message);
         break;
+      // Sessiya boshqa qurilmada tozalandi/o'chirildi. Avval bu xabar umuman
+      // yo'q edi va bu tab o'lik sessiyaga bog'lanib qolardi: yuborilgan
+      // xabarlar jimgina yo'qolar, "band" holati esa abadiy qotib qolardi.
+      // Ulanishni yopamiz — mavjud avtomatik qayta ulanish (`close` handleri)
+      // darhol yangi, to'g'ri holatni olib keladi.
+      case 'session_invalidated':
+        addSystemNote('Suhbat boshqa qurilmada tozalandi — qayta ulanmoqda…');
+        setBusy(false);
+        try { ws.close(); } catch { /* allaqachon yopilgan bo'lishi mumkin */ }
+        break;
       case 'auth_error':
         window.location.href = '/login.html';
         break;
@@ -762,7 +827,19 @@
       const chip = document.createElement('div');
       chip.className = `attachment-chip ${att.kind}${att.uploading ? ' uploading' : ''}`;
       if (att.kind === 'image') {
-        chip.innerHTML = `<img src="${att.previewUrl}" alt="${escapeHtml(att.name)}"><button type="button" class="attachment-remove" aria-label="O'chirish">&times;</button>`;
+        // Rasm DOM API bilan yasaladi, satr sifatida emas: avval fayl nomi
+        // `alt="..."` atributiga escape'siz (qo'shtirnoqsiz) qo'yilardi va
+        // `x" onerror="..."` nomli fayl kod ishga tushirardi.
+        const img = document.createElement('img');
+        img.src = att.previewUrl;
+        img.alt = att.name;
+        chip.appendChild(img);
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'attachment-remove';
+        rm.setAttribute('aria-label', "O'chirish");
+        rm.innerHTML = '&times;';
+        chip.appendChild(rm);
       } else {
         chip.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span class="attachment-file-name"></span><button type="button" class="attachment-remove" aria-label="O'chirish">&times;</button>`;
         chip.querySelector('.attachment-file-name').textContent = att.uploading ? `${att.name}…` : att.name;
@@ -879,12 +956,23 @@
     });
   });
 
+  // Ro'yxatning ko'rinishga ta'sir qiluvchi "barmoq izi". Har 5 soniyada
+  // kelayotgan bir xil javob uchun DOM'ni qayta qurmaslik uchun ishlatiladi —
+  // avval drawer ochiq turganda ham ro'yxat har 5 soniyada butunlay
+  // qayta yaratilardi (bosish paytida element almashib ketishi mumkin edi).
+  let lastProjectsSignature = '';
+
   async function fetchProjects() {
     try {
       const res = await fetch('/api/projects');
       const data = await res.json();
       projectsList = data.projects || [];
-      renderProjectList();
+      const signature = JSON.stringify(projectsList.map((p) => [p.id, p.label, p.path, p.busy, p.pending]))
+        + `|${activeProjectId}`;
+      if (signature !== lastProjectsSignature) {
+        lastProjectsSignature = signature;
+        renderProjectList();
+      }
       updateStatusBadges();
     } catch { /* offline - leave list as-is */ }
   }
@@ -1333,13 +1421,16 @@
 
   const PM2_STATUS_LABEL = { online: 'ishlayapti', stopped: "to'xtatilgan", errored: 'xato', stopping: "to'xtamoqda", launching: 'ishga tushmoqda' };
 
+  // Birlik qisqartmalari: avval `s` bitta funksiya ichida HAM soniya, HAM
+  // soat ma'nosida ishlatilardi — "45s" 45 soniya, "3s" esa 3 soat edi.
+  // Endi soniya `son`, daqiqa `daq`, soat `soat`, kun `kun`.
   function formatUptime(ts) {
     if (!ts) return '';
     const sec = Math.floor((Date.now() - ts) / 1000);
-    if (sec < 60) return `${sec}s`;
-    if (sec < 3600) return `${Math.floor(sec / 60)}d`;
-    if (sec < 86400) return `${Math.floor(sec / 3600)}s`;
-    return `${Math.floor(sec / 86400)}kun`;
+    if (sec < 60) return `${sec} son`;
+    if (sec < 3600) return `${Math.floor(sec / 60)} daq`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)} soat`;
+    return `${Math.floor(sec / 86400)} kun`;
   }
 
   function formatMem(bytes) {

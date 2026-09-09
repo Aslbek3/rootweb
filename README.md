@@ -41,8 +41,14 @@ ipconfig
 
 - Bu server hozircha faqat **lokal tarmoq** uchun mo'ljallangan (parol + cookie bilan himoyalangan, lekin HTTPS yo'q).
 - Internetga (masalan, uydan tashqarida ham ishlashi uchun) chiqarish uchun tunnel (Cloudflare Tunnel, Tailscale va h.k.) yoki HTTPS bilan hosting kerak bo'ladi — buni alohida sozlash tavsiya etiladi.
-- `Read`, `Grep`, `Glob`, `TodoWrite` avtomatik ruxsat etiladi (faqat o'qish). `Write`, `Edit`, `Bash`/`PowerShell`, `WebFetch` kabi amallar har doim ilovada tasdiq so'raydi — buni `server/index.js` faylidagi `SAFE_TOOLS` ro'yxatidan o'zgartirish mumkin.
-- Sahifa qayta yuklansa (refresh) yoki ulanish uzilsa, joriy suhbat sessiyasi tugaydi (server xotirasida saqlanadi, diskka yozilmaydi).
+- `Read`, `Grep`, `Glob`, `TodoWrite` avtomatik ruxsat etiladi (faqat o'qish). `Write`, `Edit`, `Bash`/`PowerShell`, `WebFetch` kabi amallar tasdiq so'raydi — `SAFE_TOOLS` ro'yxati `server/sessionManager.js` faylida.
+- "Avto" (`acceptEdits`) rejimda Bash buyruqlari **allowlist + denylist** siyosatidan o'tadi (`server/bashPolicy.js`). Siyosat testlar bilan qoplangan: `npm test`.
+- Sessiya cookie'si 24 soat amal qiladi; "Chiqish" barcha mavjud sessiyalarni bekor qiladi.
+- WebSocket ulanishi `Origin` sarlavhasini tekshiradi (CSWSH himoyasi). Domen aniq bo'lsa `.env`ga `PUBLIC_ORIGIN=https://...` qo'shing.
+- Login urinishlari cheklangan: 4 urinish / 15 daqiqa, keyin `429`.
+- Sahifa qayta yuklansa (refresh) yoki ulanish uzilsa, suhbat davom etadi — tarix diskda (`server/data/sessions_meta.json`) saqlanadi va qayta ulanishda tiklanadi.
+
+> Batafsil xavfsizlik hujjati: [`docs/xavfsizlik-tuzatishlari.md`](docs/xavfsizlik-tuzatishlari.md)
 
 ## VPS'ga joylashtirish
 
