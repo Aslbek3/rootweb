@@ -1796,3 +1796,10 @@ pre.has-copy .copy-btn {
   .settings-row:hover { border-color: var(--border-strong); background: var(--bg-elev-3); }
 }
 .settings-row:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+/* Obuna limiti bloki sozlamalar panelida — qatorlar bilan bir xil
+   fon ishlatadi (sozlamalar tanasi allaqachon --bg-elev ustida). */
+.settings-body .rate-limit-stats {
+  background: var(--bg-elev-2);
+  margin-bottom: 0;
+}

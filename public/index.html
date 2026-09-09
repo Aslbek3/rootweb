@@ -118,7 +118,7 @@
         <button type="button" class="drawer-tab active" data-tab="projects">loyihalar</button>
         <button type="button" class="drawer-tab" data-tab="files">fayllar</button>
         <button type="button" class="drawer-tab" data-tab="bots">botlar</button>
-        <button type="button" class="drawer-tab" data-tab="limit">limit</button>
+        <button type="button" class="drawer-tab" data-tab="limit">sarf</button>
       </div>
       <button class="icon-btn" id="drawerCloseBtn" title="Yopish" aria-label="Yopish">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -173,8 +173,10 @@
       <div id="botList" class="bot-list"></div>
     </div>
 
+    <!-- Obuna limiti (5 soatlik / haftalik) sozlamalarga ko'chirildi —
+         u hisobga tegishli ma'lumot. Bu yerda joriy sessiyaning token/
+         xarajat sarfi qoladi. -->
     <div class="drawer-panel hidden" id="panelLimit">
-      <div id="rateLimitStats" class="rate-limit-stats"></div>
       <div id="usageStats" class="usage-stats"></div>
       <div class="empty-hint">"Joriy sessiya" faqat server ishga tushirilgandan beri hisoblanadi (server qayta ishga tushirilsa nolga qaytadi). 5-soatlik/haftalik limit — Claude hisobingizning haqiqiy holati.</div>
     </div>
@@ -211,6 +213,11 @@
           </span>
           <span class="settings-row-value" id="notifyValue">—</span>
         </button>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">Obuna limiti</div>
+        <div id="rateLimitStats" class="rate-limit-stats"></div>
       </div>
 
       <div class="settings-group">

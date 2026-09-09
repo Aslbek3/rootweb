@@ -794,7 +794,8 @@
       case 'rate_limit_data':
         rateLimitState = msg.data;
         rateLimitLoaded = true;
-        if (!panelLimit.classList.contains('hidden')) renderRateLimits();
+        // Limit endi sozlamalar panelida ko'rsatiladi (drawer'dagi tabda emas)
+        if (settingsSheet.classList.contains('open')) renderRateLimits();
         break;
       case 'error':
         setBusy(false);
@@ -1170,6 +1171,11 @@
     requestAnimationFrame(() => settingsOverlay.classList.add('show'));
     settingsBtn.setAttribute('aria-expanded', 'true');
     openOverlay('settings', doCloseSettings);
+    // Obuna limiti (5 soatlik / haftalik) shu yerda ko'rsatiladi.
+    // Doimiy so'ralmaydi — faqat panel ochilganda, chunki bu SDK'ning
+    // eksperimental metodi orqali keladi va har safar so'rash keraksiz.
+    renderRateLimits();
+    send({ type: 'get_rate_limits' });
   }
 
   function doCloseSettings() {
@@ -1366,11 +1372,9 @@
       panelLimit.classList.toggle('hidden', tab !== 'limit');
       if (tab === 'files') { currentDir = '.'; loadFiles(); }
       if (tab === 'bots') { loadBotList(); startBotPolling(); } else { stopBotPolling(); }
-      if (tab === 'limit') {
-        renderUsagePanel();
-        renderRateLimits();
-        send({ type: 'get_rate_limits' });
-      }
+      // "sarf" tabi endi faqat joriy sessiya statistikasini ko'rsatadi —
+      // obuna limiti (5 soatlik / haftalik) sozlamalarga ko'chirildi.
+      if (tab === 'limit') renderUsagePanel();
     });
   });
 
