@@ -18,6 +18,45 @@ const EDIT_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit']);
 // How many past events to keep for replay when a client (re)connects.
 const MAX_HISTORY = 500;
 
+// Tool natijasi uchun ikkita alohida chegara (`emitSplit`ga qara):
+// jonli ulangan klient to'liqroq chiqishni oladi, diskdagi tarixga esa
+// ancha qisqasi tushadi — aks holda bitta `pm2 logs`/`cat` natijasi
+// `sessions_meta.json`ni megabaytlarga shishirib yuborardi.
+const LIVE_OUTPUT_MAX = 16 * 1024;
+const HISTORY_OUTPUT_MAX = 2 * 1024;
+
+// SDK'ning `tool_result` bloki mazmuni yo oddiy satr, yo content-blok
+// massivi bo'lishi mumkin — ikkalasini ham matnga keltiramiz.
+function extractToolOutput(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((b) => {
+        if (typeof b === 'string') return b;
+        if (b && b.type === 'text') return b.text || '';
+        if (b && b.type === 'image') return '[rasm]';
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
+function clampOutput(text, max) {
+  if (!text) return { output: '', truncated: false };
+  if (text.length <= max) return { output: text, truncated: false };
+  // Oxiri ko'pincha muhimroq (xato xabari, oxirgi loglar), lekin boshi ham
+  // kerak — shuning uchun ikkala uchini olamiz.
+  const head = text.slice(0, Math.floor(max * 0.6));
+  const tail = text.slice(-Math.floor(max * 0.4));
+  return {
+    output: `${head}\n\n… [${text.length - max} belgi tashlab ketildi] …\n\n${tail}`,
+    truncated: true,
+    fullLength: text.length,
+  };
+}
+
 // One persistent Claude Agent SDK conversation per project, kept alive in
 // memory for as long as the server process runs. A `pm2 restart` (deploy,
 // crash, manual restart) still ends the in-memory `sessions` Map below — but
@@ -159,6 +198,15 @@ function createSession(projectId, cwd, description) {
     broadcast(event);
   }
 
+  // Jonli ulangan klientlarga BOSHQA (kattaroq) nusxa, diskdagi tarixga esa
+  // qisqartirilgan nusxa yuboradi. Faqat `tool_result` uchun kerak: xom
+  // chiqish megabaytlarga yetishi mumkin va uni to'liq holda `history`ga
+  // (demak `sessions_meta.json`ga) yozib qo'yish faylni shishirib yuborardi.
+  function emitSplit(liveEvent, historyEvent) {
+    record(historyEvent);
+    broadcast(liveEvent);
+  }
+
   // Lives for the lifetime of the session (never ended by a client
   // disconnecting) so a task Claude is running keeps going in the
   // background even while nobody is looking at it.
@@ -266,7 +314,17 @@ function createSession(projectId, cwd, description) {
         if (Array.isArray(content)) {
           for (const block of content) {
             if (block.type === 'tool_result') {
-              emit({ type: 'tool_result', id: block.tool_use_id, isError: !!block.is_error });
+              // Avval bu yerda faqat `{id, isError}` yuborilardi — ya'ni tool
+              // chiqishi (masalan `pm2 logs`ning natijasi) klientga UMUMAN
+              // yetib bormasdi va foydalanuvchi faqat ✓ belgisini ko'rardi.
+              // Xom natijani ko'rish uchun Claude uni matn sifatida qayta
+              // yozib berishini kutish kerak edi: sekin, token sarflaydi va
+              // qisqartirilgan bo'lardi.
+              const output = extractToolOutput(block.content);
+              emitSplit(
+                { type: 'tool_result', id: block.tool_use_id, isError: !!block.is_error, ...clampOutput(output, LIVE_OUTPUT_MAX) },
+                { type: 'tool_result', id: block.tool_use_id, isError: !!block.is_error, ...clampOutput(output, HISTORY_OUTPUT_MAX) },
+              );
             }
           }
         }
@@ -474,4 +532,6 @@ function getStatus(projectId) {
   return session ? session.status() : { busy: false, pending: 0 };
 }
 
-module.exports = { getOrCreateSession, getStatus, resetSession };
+// `extractToolOutput`/`clampOutput` test uchun ham eksport qilinadi
+// (`test/toolOutput.test.js`) — ular tool natijasi ko'rsatilishining asosi.
+module.exports = { getOrCreateSession, getStatus, resetSession, extractToolOutput, clampOutput };

@@ -1,5 +1,6 @@
 (() => {
   const messagesEl = document.getElementById('messages');
+  const jumpBottomBtn = document.getElementById('jumpBottomBtn');
   const form = document.getElementById('composer');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('sendBtn');
@@ -83,8 +84,109 @@
   let currentFilePath = null;
   let currentFileEditable = false;
 
-  function scrollToBottom() {
+  // ---------------- skroll boshqaruvi ----------------
+  // Avval `scrollToBottom()` har bir xabarda SHARTSIZ chaqirilardi: Claude
+  // yozayotganda yuqoriga chiqib biror narsani o'qimoqchi bo'lsangiz, keyingi
+  // blok sizni pastga tortib tushirardi. Endi avtomatik skroll faqat
+  // foydalanuvchi allaqachon pastda bo'lsa ishlaydi; aks holda pastda "↓"
+  // tugmasi paydo bo'ladi.
+  const STICK_THRESHOLD_PX = 80;
+  let stickToBottom = true;
+
+  function distanceFromBottom() {
+    return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+  }
+
+  function updateJumpButton() {
+    if (!jumpBottomBtn) return;
+    jumpBottomBtn.classList.toggle('hidden', stickToBottom);
+  }
+
+  messagesEl.addEventListener('scroll', () => {
+    stickToBottom = distanceFromBottom() < STICK_THRESHOLD_PX;
+    if (stickToBottom) jumpBottomBtn.classList.remove('unread');
+    updateJumpButton();
+  });
+
+  // `force` — foydalanuvchining o'z amali (xabar yuborish, loyiha almashish,
+  // tarixni qayta chizish) uchun: bunda skroll har doim pastga tushadi.
+  function scrollToBottom(force) {
+    if (force) {
+      stickToBottom = true;
+      jumpBottomBtn.classList.remove('unread');
+    }
+    if (!stickToBottom) {
+      // Pastda emasmiz — yangi xabar kelganini "↓" tugmasida belgilaymiz.
+      jumpBottomBtn.classList.add('unread');
+      updateJumpButton();
+      return;
+    }
     messagesEl.scrollTop = messagesEl.scrollHeight;
+    updateJumpButton();
+  }
+
+  if (jumpBottomBtn) {
+    jumpBottomBtn.addEventListener('click', () => {
+      messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+      stickToBottom = true;
+      jumpBottomBtn.classList.remove('unread');
+      updateJumpButton();
+    });
+  }
+
+  // ---------------- nusxa olish ----------------
+  // Telefonda `<pre>` ichidan matn belgilash juda noqulay, holbuki Claude
+  // bergan buyruqni nusxalash — bu ilovadagi eng tez-tez qilinadigan
+  // amallardan biri.
+  async function copyText(text, btn) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Eski brauzer yoki ruxsat berilmagan holat uchun zaxira usul.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch { /* qo'lda nusxalash qoladi */ }
+      ta.remove();
+    }
+    if (btn) {
+      btn.classList.add('copied');
+      btn.setAttribute('aria-label', 'Nusxalandi');
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.setAttribute('aria-label', 'Nusxa olish');
+      }, 1400);
+    }
+  }
+
+  const COPY_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>'
+    + '<svg class="copy-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+  function makeCopyBtn(getText) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.setAttribute('aria-label', 'Nusxa olish');
+    btn.title = 'Nusxa olish';
+    btn.innerHTML = COPY_SVG;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyText(getText(), btn);
+    });
+    return btn;
+  }
+
+  // Xabar ichidagi har bir kod blokiga nusxa tugmasini qo'shadi.
+  function attachCodeCopyButtons(container) {
+    for (const pre of container.querySelectorAll('pre')) {
+      if (pre.querySelector('.copy-btn')) continue;
+      pre.classList.add('has-copy');
+      pre.appendChild(makeCopyBtn(() => pre.querySelector('code')?.textContent || pre.textContent));
+    }
   }
 
   // ⚠️ Qo'shtirnoqlar ham escape qilinadi. Avval faqat `& < >` almashtirilardi,
@@ -202,6 +304,7 @@
     }
     const textEl = document.createElement('div');
     textEl.innerHTML = renderMarkdown(text);
+    attachCodeCopyButtons(textEl);
     content.appendChild(textEl);
     wrap.appendChild(marker);
     wrap.appendChild(content);
@@ -246,20 +349,61 @@
     card.dataset.toolId = id;
     const tag = TOOL_TAGS[name] || name.toUpperCase();
     const summary = toolSummary(name, input);
-    card.innerHTML = `<span class="tool-tag">[${escapeHtml(tag)}]</span><span class="tool-summary"></span><span class="tool-status"></span>`;
+    card.innerHTML = `<div class="tool-head"><span class="tool-tag">[${escapeHtml(tag)}]</span><span class="tool-summary"></span><span class="tool-status"></span></div>`;
     card.querySelector('.tool-summary').textContent = summary;
+    // Buyruqning o'zidan nusxa olish — SSH'ga ko'chirish uchun eng tez yo'l.
+    if (summary) card.querySelector('.tool-head').appendChild(makeCopyBtn(() => summary));
     messagesEl.appendChild(card);
     scrollToBottom();
     return card;
   }
 
-  function markToolResult(id, isError) {
+  // Tool natijasi kelganda kartochkani belgilaydi VA chiqish bo'lsa uni
+  // ochib-yopiladigan blok sifatida qo'shadi. Avval bu yerda faqat ✓/✗
+  // qo'yilardi — xom chiqish klientga umuman kelmasdi.
+  function markToolResult(id, isError, output, truncated, fullLength) {
     const card = messagesEl.querySelector(`.tool-card[data-tool-id="${CSS.escape(id)}"]`);
-    if (card) {
-      card.classList.add(isError ? 'error' : 'ok');
-      const statusEl = card.querySelector('.tool-status');
-      if (statusEl) statusEl.textContent = isError ? '✗' : '✓';
+    if (!card) return;
+    card.classList.add(isError ? 'error' : 'ok');
+    const statusEl = card.querySelector('.tool-status');
+    if (statusEl) statusEl.textContent = isError ? '✗' : '✓';
+    if (!output || card.querySelector('.tool-output')) return;
+
+    card.classList.add('expandable');
+    const head = card.querySelector('.tool-head');
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'tool-toggle';
+    const lineCount = output.split('\n').length;
+    toggle.textContent = `natija (${lineCount} qator)`;
+    toggle.setAttribute('aria-expanded', 'false');
+
+    const outWrap = document.createElement('div');
+    outWrap.className = 'tool-output hidden';
+    const pre = document.createElement('pre');
+    pre.textContent = output;
+    outWrap.appendChild(pre);
+    if (truncated) {
+      const note = document.createElement('div');
+      note.className = 'tool-output-note';
+      note.textContent = fullLength
+        ? `Chiqish qisqartirildi (to'liq hajmi ${fullLength.toLocaleString('uz-UZ')} belgi)`
+        : 'Chiqish qisqartirildi';
+      outWrap.appendChild(note);
     }
+    outWrap.appendChild(makeCopyBtn(() => output));
+
+    toggle.addEventListener('click', () => {
+      const willShow = outWrap.classList.contains('hidden');
+      outWrap.classList.toggle('hidden', !willShow);
+      toggle.setAttribute('aria-expanded', String(willShow));
+      toggle.classList.toggle('open', willShow);
+      if (willShow) scrollToBottom();
+    });
+
+    head.appendChild(toggle);
+    card.appendChild(outWrap);
   }
 
   // Ruxsat so'rovini texnik bo'lmagan odam ham tushunadigan qisqa jumlaga
@@ -333,6 +477,9 @@
         <button class="deny">Rad etish</button>
       </div>`;
     if (friendly) card.querySelector('.pfriendly').textContent = friendly;
+    // Ruxsat so'ralayotgan buyruqni nusxalash: ba'zan uni tasdiqlash o'rniga
+    // qo'lda, o'zgartirib ishga tushirish qulayroq bo'ladi.
+    if (summary) card.querySelector('.pcmd-preview').appendChild(makeCopyBtn(() => summary));
     if (name === 'Edit' && input && typeof input.old_string === 'string' && typeof input.new_string === 'string') {
       card.querySelector('.permission-diff-slot').appendChild(renderLineDiff(input.old_string, input.new_string));
     }
@@ -510,6 +657,9 @@
         hideTyping();
         for (const evt of msg.history || []) handleMessage(evt, true);
         setBusy(!!msg.busy);
+        // Tarix qayta chizilgandan keyin har doim pastga tushamiz — bu
+        // foydalanuvchining o'z amali (ulanish/loyiha almashish) natijasi.
+        scrollToBottom(true);
         if (isSwitching) {
           addSystemNote("Loyiha almashtirildi: " + (msg.cwd || ''));
           isSwitching = false;
@@ -530,7 +680,7 @@
         addToolCard(msg.id, msg.name, msg.input);
         break;
       case 'tool_result':
-        markToolResult(msg.id, msg.isError);
+        markToolResult(msg.id, msg.isError, msg.output, msg.truncated, msg.fullLength);
         break;
       case 'permission_request':
         hideTyping();
@@ -604,6 +754,7 @@
       outgoingText += (text ? '\n\n' : '') + `[Ilova qilingan fayllar: ${fileNames.join(', ')}]`;
     }
     addBubble('user', text || '(ilova)', pendingAttachments);
+    scrollToBottom(true); // o'z xabaringizni yuborganda har doim pastga
     send({ type: 'chat', text: outgoingText, images: images.map((a) => ({ mediaType: a.mediaType, data: a.data })) });
     input.value = '';
     input.style.height = 'auto';
@@ -785,18 +936,73 @@
 
   updateNotifyBtn();
 
+  // ---------------- ustma-ust oynalar: orqaga tugmasi va Escape ----------------
+  //
+  // Avval hech qanday `popstate` boshqaruvi yo'q edi: `display: standalone`
+  // PWA'da drawer yoki fayl ko'ruvchi ochiq turganda Android'ning "orqaga"
+  // tugmasi oynani yopmasdan ILOVANI butunlay yopardi. Escape ham hech
+  // qayerda ishlamasdi.
+  //
+  // Endi har bir ochilgan oyna `history.pushState` bilan bitta yozuv
+  // qo'shadi; yopish esa har doim `history.back()` orqali ketadi, ya'ni
+  // brauzer tarixi va ekrandagi holat bir-biriga mos qoladi.
+  const overlayStack = [];
+
+  function openOverlay(name, closeFn) {
+    overlayStack.push({ name, close: closeFn });
+    history.pushState({ rootwebOverlay: name }, '');
+  }
+
+  // Foydalanuvchi yopmoqchi bo'lganda (tugma, fon bosilishi, Escape) shu
+  // chaqiriladi — DOM'ni o'zi yopmaydi, `history.back()` qiladi va haqiqiy
+  // yopish `popstate`da bajariladi. Shunda "orqaga" va "yopish" bir xil
+  // yo'ldan boradi va tarix rasmga mos qoladi.
+  function requestCloseOverlay(name) {
+    if (!overlayStack.length) return;
+    if (name && !overlayStack.some((o) => o.name === name)) return;
+    history.back();
+  }
+
+  window.addEventListener('popstate', () => {
+    const top = overlayStack.pop();
+    if (top) top.close();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlayStack.length) {
+      e.preventDefault();
+      history.back();
+    }
+  });
+
   // ---------------- drawer: loyihalar & fayllar ----------------
 
   function openDrawer() {
+    if (drawer.classList.contains('open')) return;
     drawer.classList.add('open');
     drawerOverlay.classList.remove('hidden');
     requestAnimationFrame(() => drawerOverlay.classList.add('show'));
+    openOverlay('drawer', doCloseDrawer);
+    // "botlar" tabi ochiq qolgan bo'lsa so'rovlarni qayta boshlaymiz —
+    // `doCloseDrawer` ularni to'xtatadi (yopiq drawer uchun har 12 soniyada
+    // so'rov yuborish keraksiz edi).
+    const activeTab = drawer.querySelector('.drawer-tab.active');
+    if (activeTab && activeTab.dataset.tab === 'bots') {
+      loadBotList();
+      startBotPolling();
+    }
   }
 
-  function closeDrawer() {
+  // Haqiqiy yopish — faqat `popstate` orqali chaqiriladi.
+  function doCloseDrawer() {
     drawer.classList.remove('open');
     drawerOverlay.classList.remove('show');
     setTimeout(() => drawerOverlay.classList.add('hidden'), 180);
+    stopBotPolling();
+  }
+
+  function closeDrawer() {
+    requestCloseOverlay('drawer');
   }
 
   filesBtn.addEventListener('click', () => {
@@ -1354,9 +1560,7 @@
     fileViewerName.textContent = relPath;
     fileDownloadBtn.href = `/api/file/download?${browseQuery()}&file=${encodeURIComponent(relPath)}`;
     fileViewerContent.textContent = 'Yuklanmoqda...';
-    fileViewer.classList.add('open');
-    fileViewerOverlay.classList.remove('hidden');
-    requestAnimationFrame(() => fileViewerOverlay.classList.add('show'));
+    openFileViewer();
     try {
       const res = await fetch(`/api/file?${browseQuery()}&file=${encodeURIComponent(relPath)}`);
       const data = await res.json();
@@ -1408,11 +1612,25 @@
     }
   });
 
-  function closeFileViewer() {
+  // Ochish/yopish ikkalasi ham `overlayStack` orqali ketadi, shunda "orqaga"
+  // tugmasi va Escape fayl ko'ruvchini yopadi (ilovadan chiqib ketmaydi).
+  function openFileViewer() {
+    if (fileViewer.classList.contains('open')) return;
+    fileViewer.classList.add('open');
+    fileViewerOverlay.classList.remove('hidden');
+    requestAnimationFrame(() => fileViewerOverlay.classList.add('show'));
+    openOverlay('fileViewer', doCloseFileViewer);
+  }
+
+  function doCloseFileViewer() {
     fileViewer.classList.remove('open');
     fileViewerOverlay.classList.remove('show');
     setTimeout(() => fileViewerOverlay.classList.add('hidden'), 180);
     setFileEditMode(false);
+  }
+
+  function closeFileViewer() {
+    requestCloseOverlay('fileViewer');
   }
   fileViewerCloseBtn.addEventListener('click', closeFileViewer);
   fileViewerOverlay.addEventListener('click', closeFileViewer);
@@ -1521,9 +1739,7 @@
     fileViewerContent.textContent = 'Yuklanmoqda...';
     currentFileEditable = false;
     setFileEditMode(false);
-    fileViewer.classList.add('open');
-    fileViewerOverlay.classList.remove('hidden');
-    requestAnimationFrame(() => fileViewerOverlay.classList.add('show'));
+    openFileViewer();
     try {
       const res = await fetch(`/api/pm2/${encodeURIComponent(name)}/logs?lines=100`);
       const data = await res.json();

@@ -59,6 +59,12 @@
     <div id="messages"></div>
 
     <div class="composer-wrap">
+      <!-- Chatda yuqoriga chiqilganda paydo bo'ladi; yangi xabar kelsa
+           `unread` klassi bilan belgilanadi. Composer ICHIDA turadi, shunda
+           matn maydoni o'sganda ham u bilan birga siljiydi. -->
+      <button type="button" id="jumpBottomBtn" class="jump-bottom hidden" title="Pastga" aria-label="Eng pastga o'tish">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg>
+      </button>
       <form id="composer">
         <div id="attachmentRow" class="attachment-row hidden"></div>
         <textarea id="input" rows="1" placeholder="Xabar yozing..."></textarea>

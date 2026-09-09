@@ -351,15 +351,19 @@ button.icon-btn#fileSaveBtn { color: var(--ok); border-color: var(--ok); }
 
 /* tool / system cards */
 .tool-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   font-size: 12.5px;
   font-family: var(--mono);
+}
+/* Sarlavha qatori — avval bu `.tool-card`ning o'zi edi; endi natija bloki
+   ostiga qo'shilishi uchun kartochka ustunga, sarlavha qatorga aylandi. */
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .tool-tag {
   color: var(--accent-bright);
@@ -556,6 +560,9 @@ button.icon-btn#fileSaveBtn { color: var(--ok); border-color: var(--ok); }
   flex-shrink: 0;
   padding: 8px 14px calc(12px + var(--safe-bottom));
   background: var(--bg);
+  /* `.jump-bottom` shu blokka nisbatan joylashadi (`bottom: calc(100% + 10px)`),
+     shunda matn maydoni o'sganda tugma ham u bilan birga ko'tariladi. */
+  position: relative;
 }
 #composer {
   display: flex;
@@ -1151,3 +1158,162 @@ button.icon-btn.hidden { display: none; }
   font-family: var(--sans);
 }
 
+
+/* ============================================================
+   Chatni o'qish tajribasi: nusxa olish, tool natijasi, pastga tushish
+   ============================================================ */
+
+/* --- nusxa olish tugmasi --- */
+.copy-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 3px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .12s ease, border-color .12s ease, background-color .12s ease;
+}
+.copy-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.copy-btn .copy-done { display: none; }
+.copy-btn.copied { color: var(--ok); border-color: var(--ok); }
+.copy-btn.copied svg:not(.copy-done) { display: none; }
+.copy-btn.copied .copy-done { display: block; }
+@media (hover: hover) and (pointer: fine) {
+  .copy-btn:hover { color: var(--text); border-color: var(--text-dim); }
+}
+.copy-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+
+/* Kod bloklarida tugma o'ng yuqori burchakda suzadi. Mobilda doim
+   ko'rinadi (hover yo'q), kompyuterda blok ustiga kelganda kuchayadi. */
+pre.has-copy { position: relative; }
+pre.has-copy .copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--bg-elev);
+  opacity: 0.75;
+}
+@media (hover: hover) and (pointer: fine) {
+  pre.has-copy .copy-btn { opacity: 0; }
+  pre.has-copy:hover .copy-btn,
+  pre.has-copy .copy-btn:focus-visible { opacity: 1; }
+}
+
+.pcmd-preview { position: relative; padding-right: 38px; }
+.pcmd-preview .copy-btn { position: absolute; top: 5px; right: 5px; }
+
+/* --- tool natijasi (ochib-yopiladigan) --- */
+.tool-toggle {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tool-toggle::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform .15s ease;
+}
+.tool-toggle.open::before { transform: rotate(90deg); }
+.tool-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+@media (hover: hover) and (pointer: fine) {
+  .tool-toggle:hover { color: var(--text); }
+}
+
+.tool-output {
+  position: relative;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.tool-output.hidden { display: none; }
+.tool-output pre {
+  margin: 0;
+  padding: 8px 38px 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  line-height: 1.5;
+  /* Uzun loglar uchun: gorizontal skroll kartochka ICHIDA qoladi, sahifa
+     kengayib ketmaydi. Balandlik ham cheklangan. */
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre;
+}
+.tool-output .copy-btn { position: absolute; top: 14px; right: 6px; }
+.tool-output-note {
+  margin-top: 6px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* --- "pastga tushish" tugmasi --- */
+.jump-bottom {
+  position: absolute;
+  right: 14px;
+  bottom: calc(100% + 10px);
+  z-index: 40;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.55);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.jump-bottom svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jump-bottom.hidden { display: none; }
+/* Yangi xabar kelgan bo'lsa — kichik accent nuqta */
+.jump-bottom.unread::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  border: 2px solid var(--bg-elev);
+}
+.jump-bottom:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
