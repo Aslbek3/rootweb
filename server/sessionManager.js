@@ -369,6 +369,28 @@ function createSession(projectId, cwd, description) {
       }
       case 'result':
         busy = false;
+        // Har bir navbat uchun token hisobini audit-logga yozamiz.
+        //
+        // Nega: "oddiy vazifa uchun limitning 30% i ketdi" degan holatni
+        // TAXMIN bilan tushuntirib bo'lmaydi. Bu yerdagi eng muhim raqam —
+        // `cache_read` va `cache_creation` nisbati: Claude Code kontekstni
+        // keshlaydi va keshdan o'qish ancha arzon. Agar `cache_read` kichik
+        // bo'lib, `input` har safar katta chiqsa — kesh ishlamayapti va
+        // butun suhbat har bir xabarda to'liq narxda qayta hisoblanmoqda.
+        // Aynan shu "terminalda bunchalik emas" degan farqni tushuntiradi.
+        if (message.usage) {
+          const u = message.usage;
+          auditLog.log('turn_usage', {
+            projectId,
+            input: u.input_tokens || 0,
+            output: u.output_tokens || 0,
+            cacheRead: u.cache_read_input_tokens || 0,
+            cacheWrite: u.cache_creation_input_tokens || 0,
+            costUsd: typeof message.total_cost_usd === 'number' ? message.total_cost_usd : null,
+            turns: typeof message.num_turns === 'number' ? message.num_turns : null,
+            durationMs: typeof message.duration_ms === 'number' ? message.duration_ms : null,
+          });
+        }
         emit({
           type: 'result',
           isError: !!message.is_error,
