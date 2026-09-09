@@ -189,14 +189,6 @@ function createSession(projectId, cwd, description) {
   if (savedMeta && typeof savedMeta.permissionMode === 'string') {
     permissionMode = ALLOWED_MODES.has(savedMeta.permissionMode) ? savedMeta.permissionMode : 'default';
   }
-  // Sessiya davomida yig'ilib boruvchi foydalanish statistikasi ("usage"
-  // tugmasi uchun) — input/output token har bir SDK 'result' navbatida
-  // qo'shiladi, total_cost_usd esa SDK'ning o'zi kumulyativ hisoblab
-  // beradi (shunchaki oxirgi qiymat saqlanadi).
-  let cumulativeInputTokens = 0;
-  let cumulativeOutputTokens = 0;
-  let totalCostUsd = 0;
-
   function wake() {
     if (resolveNext) {
       const r = resolveNext;
@@ -379,19 +371,6 @@ function createSession(projectId, cwd, description) {
           isError: !!message.is_error,
           message: message.is_error ? (message.errors || []).join('; ') : undefined,
         });
-        if (message.usage || typeof message.total_cost_usd === 'number') {
-          if (message.usage) {
-            cumulativeInputTokens += message.usage.input_tokens || 0;
-            cumulativeOutputTokens += message.usage.output_tokens || 0;
-          }
-          if (typeof message.total_cost_usd === 'number') totalCostUsd = message.total_cost_usd;
-          emit({
-            type: 'usage_update',
-            inputTokens: cumulativeInputTokens,
-            outputTokens: cumulativeOutputTokens,
-            totalCostUsd,
-          });
-        }
         break;
       default:
         break;
@@ -520,7 +499,6 @@ function createSession(projectId, cwd, description) {
         sessionId: sdkSessionId,
         busy,
         permissionMode,
-        usage: { inputTokens: cumulativeInputTokens, outputTokens: cumulativeOutputTokens, totalCostUsd },
         // Drop permission/question requests that were already answered so a
         // reconnecting client doesn't see a stale, dead prompt.
         history: history.filter((e) =>

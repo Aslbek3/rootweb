@@ -207,15 +207,6 @@ header.topbar {
 .rl-reset { font-size: 11.5px; color: var(--text-dim); margin-top: 6px; }
 .rl-plan { color: var(--accent-bright); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 10px; }
 
-.usage-stats {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
-}
-.usage-stats-title { color: var(--accent-bright); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px; }
-.usage-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; color: var(--text-dim); font-size: 13px; }
-.usage-row span:last-child { color: var(--text); font-family: var(--mono); }
 .tl-title {
   flex: 1;
   min-width: 0;

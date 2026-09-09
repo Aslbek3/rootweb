@@ -657,7 +657,6 @@ async function handleConnection(ws) {
       sessionId: snap.sessionId,
       busy: snap.busy,
       permissionMode: snap.permissionMode,
-      usage: snap.usage,
       history: snap.history,
       pm2Name: project.pm2Name || null,
     });

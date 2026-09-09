@@ -46,9 +46,7 @@
   const panelBots = document.getElementById('panelBots');
   const botListEl = document.getElementById('botList');
   const pm2StatusBadge = document.getElementById('pm2StatusBadge');
-  const panelLimit = document.getElementById('panelLimit');
   const rateLimitStats = document.getElementById('rateLimitStats');
-  const usageStats = document.getElementById('usageStats');
   const addProjectForm = document.getElementById('addProjectForm');
   const newProjectPathInput = document.getElementById('newProjectPath');
   const newProjectToggle = document.getElementById('newProjectToggle');
@@ -720,7 +718,6 @@
         lastCwd = msg.cwd || '';
         syncActiveProjectFromCwd(msg.cwd);
         setActiveMode(msg.permissionMode || 'default');
-        setUsage(msg.usage);
         activeProjectPm2Name = msg.pm2Name || null;
         if (activeProjectPm2Name) loadBotList(); else pm2StatusBadge.classList.add('hidden');
         messagesEl.innerHTML = '';
@@ -788,9 +785,6 @@
         }
         break;
       }
-      case 'usage_update':
-        setUsage({ inputTokens: msg.inputTokens, outputTokens: msg.outputTokens, totalCostUsd: msg.totalCostUsd });
-        break;
       case 'rate_limit_data':
         rateLimitState = msg.data;
         rateLimitLoaded = true;
@@ -1026,27 +1020,6 @@
 
   applyTheme(currentThemeSetting());
 
-  // ---------------- foydalanish statistikasi (usage) ----------------
-  let usageState = { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
-
-  function setUsage(u) {
-    if (!u) return;
-    usageState = {
-      inputTokens: u.inputTokens || 0,
-      outputTokens: u.outputTokens || 0,
-      totalCostUsd: u.totalCostUsd || 0,
-    };
-    if (!panelLimit.classList.contains('hidden')) renderUsagePanel();
-  }
-
-  function renderUsagePanel() {
-    usageStats.innerHTML = `
-      <div class="usage-stats-title">Foydalanish (joriy sessiya)</div>
-      <div class="usage-row"><span>Kirish</span><span>${usageState.inputTokens.toLocaleString('uz-UZ')}</span></div>
-      <div class="usage-row"><span>Chiqish</span><span>${usageState.outputTokens.toLocaleString('uz-UZ')}</span></div>
-      <div class="usage-row"><span>Xarajat</span><span>$${usageState.totalCostUsd.toFixed(4)}</span></div>
-    `;
-  }
 
   // Claude ilovasidagi kabi 5-soatlik/haftalik limit foizi — SDK'ning
   // eksperimental "/usage" metodidan (server orqali) olinadi, panel
@@ -1369,12 +1342,8 @@
       panelProjects.classList.toggle('hidden', tab !== 'projects');
       panelFiles.classList.toggle('hidden', tab !== 'files');
       panelBots.classList.toggle('hidden', tab !== 'bots');
-      panelLimit.classList.toggle('hidden', tab !== 'limit');
       if (tab === 'files') { currentDir = '.'; loadFiles(); }
       if (tab === 'bots') { loadBotList(); startBotPolling(); } else { stopBotPolling(); }
-      // "sarf" tabi endi faqat joriy sessiya statistikasini ko'rsatadi —
-      // obuna limiti (5 soatlik / haftalik) sozlamalarga ko'chirildi.
-      if (tab === 'limit') renderUsagePanel();
     });
   });
 
