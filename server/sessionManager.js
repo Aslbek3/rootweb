@@ -235,6 +235,16 @@ function createSession(projectId, cwd, description) {
   // Lives for the lifetime of the session (never ended by a client
   // disconnecting) so a task Claude is running keeps going in the
   // background even while nobody is looking at it.
+  //
+  // Claude ishlayotgan paytda yuborilgan xabar shu navbatga tushadi va
+  // joriy navbat tugagach ishlanadi — xuddi terminaldagi Claude Code kabi
+  // ("steering"). Klient bunday xabarni "navbatda" deb belgilaydi.
+  //
+  // ⚠️ Bu yerdan "xabar uzatildi" signalini yuborish urinib ko'rilgan va
+  // TASHLANGAN: SDK oqimdan xabarni deyarli darhol o'z buferiga oladi
+  // (Claude uni qachon ishlashidan qat'i nazar), ya'ni bunday signal
+  // "navbatda emas" degan noto'g'ri ma'lumot berardi. Navbat holatini
+  // klient o'zi kuzatadi — `result` (navbat tugashi) chegarasi bo'yicha.
   async function* inputStream() {
     while (true) {
       if (messageQueue.length > 0) {

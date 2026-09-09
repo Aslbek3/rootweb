@@ -661,8 +661,15 @@
 
   function setBusy(v) {
     busy = v;
-    sendBtn.style.display = v ? 'none' : 'flex';
+    // Yuborish tugmasi band holatda ham KO'RINADI. Avval u yashirilardi va
+    // `submit` handleri ham `if (busy) return` bilan to'sib turardi — ya'ni
+    // Claude ishlayotganda unga qo'shimcha ko'rsatma yozib bo'lmasdi.
+    // Terminaldagi Claude Code'da esa bu mumkin: yozgan xabaringiz navbatga
+    // tushadi va joriy navbat tugagach uzatiladi. Server tomonida navbat
+    // (`messageQueue`) allaqachon bor edi — faqat interfeys to'sib turardi.
+    sendBtn.style.display = 'flex';
     stopBtn.style.display = v ? 'flex' : 'none';
+    input.placeholder = v ? "Qo'shimcha ko'rsatma yozing (navbatga tushadi)..." : 'Xabar yozing...';
     statusDot.className = 'status-dot ' + (v ? 'working' : (ws && ws.readyState === 1 ? 'connected' : ''));
     if (v) showTyping(); else hideTyping();
   }
@@ -706,6 +713,9 @@
         activeProjectPm2Name = msg.pm2Name || null;
         if (activeProjectPm2Name) loadBotList(); else pm2StatusBadge.classList.add('hidden');
         messagesEl.innerHTML = '';
+        // DOM tozalandi — navbat kuzatuvi ham nolga tushadi, aks holda
+        // mavjud bo'lmagan elementlarga ishora qilib qolardi.
+        queuedIds.length = 0;
         hideTyping();
         for (const evt of msg.history || []) handleMessage(evt, true);
         setBusy(!!msg.busy);
@@ -755,13 +765,18 @@
       case 'busy':
         setBusy(!!msg.value);
         break;
-      case 'result':
-        setBusy(false);
+      case 'result': {
+        // Bitta navbat tugadi. Navbatda kutayotgan xabar bo'lsa — endi
+        // uning navbati keldi, ya'ni ish DAVOM etadi va "band" holatini
+        // saqlab qolamiz. Aks holda ish tugadi.
+        const stillWorking = releaseOldestQueued();
+        setBusy(stillWorking);
         if (msg.isError) addSystemNote('⚠️ ' + (msg.message || 'Xatolik yuz berdi'));
-        if (!isReplay && document.hidden) {
+        if (!isReplay && document.hidden && !stillWorking) {
           notify('Claude tugatdi', msg.isError ? (msg.message || 'Xatolik yuz berdi') : 'Vazifa yakunlandi');
         }
         break;
+      }
       case 'usage_update':
         setUsage({ inputTokens: msg.inputTokens, outputTokens: msg.outputTokens, totalCostUsd: msg.totalCostUsd });
         break;
@@ -792,7 +807,10 @@
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (busy) return;
+    // ⚠️ `if (busy) return` OLIB TASHLANDI. Claude ishlayotgan paytda ham
+    // xabar yuborish mumkin — u navbatga tushadi va joriy navbat tugagach
+    // uzatiladi (terminaldagi Claude Code kabi). Bu qo'shimcha ko'rsatma
+    // berish uchun kerak: "yo'q, u faylga tegma", "avval testni ishga tushir".
     const text = input.value.trim();
     if (!text && pendingAttachments.length === 0) return;
     if (pendingAttachments.some((a) => a.uploading)) {
@@ -805,15 +823,61 @@
     if (fileNames.length) {
       outgoingText += (text ? '\n\n' : '') + `[Ilova qilingan fayllar: ${fileNames.join(', ')}]`;
     }
-    addBubble('user', text || '(ilova)', pendingAttachments);
+
+    const msgId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const content = addBubble('user', text || '(ilova)', pendingAttachments);
+    // Band bo'lsa xabar darhol uzatilmaydi — buni ochiq ko'rsatamiz, aks
+    // holda foydalanuvchi "yubordimmi yo'qmi?" deb qoladi.
+    if (busy) markQueued(content, msgId);
     scrollToBottom(true); // o'z xabaringizni yuborganda har doim pastga
-    send({ type: 'chat', text: outgoingText, images: images.map((a) => ({ mediaType: a.mediaType, data: a.data })) });
+    send({ type: 'chat', id: msgId, text: outgoingText, images: images.map((a) => ({ mediaType: a.mediaType, data: a.data })) });
     input.value = '';
     input.style.height = 'auto';
     pendingAttachments = [];
     renderAttachments();
     setBusy(true);
   });
+
+  // ---------------- navbatdagi xabarlar ----------------
+  //
+  // Claude ishlayotgan paytda yuborilgan xabar darhol ishlanmaydi — joriy
+  // navbat tugagach navbati keladi. Buni ochiq ko'rsatmasak foydalanuvchi
+  // "yubordimmi yo'qmi?" deb qoladi.
+  //
+  // ⚠️ Navbat holatini SERVERDAN so'rash urinib ko'rilgan va tashlangan:
+  // SDK xabarni oqimdan deyarli darhol o'z buferiga oladi (Claude uni
+  // qachon ishlashidan qat'i nazar), ya'ni server "uzatildi" deb noto'g'ri
+  // aytardi — sinovda `ikkinchi` xabar navbatda turgani holda "uzatildi"
+  // deb belgilangan edi. Shuning uchun holat KLIENTDA, `result` (navbat
+  // tugashi) chegarasi bo'yicha kuzatiladi.
+  const queuedIds = [];
+
+  function markQueued(contentEl, msgId) {
+    const line = contentEl.closest('.line');
+    if (!line) return;
+    line.dataset.msgId = msgId;
+    line.classList.add('queued');
+    queuedIds.push(msgId);
+    const tag = document.createElement('div');
+    tag.className = 'queued-tag';
+    tag.textContent = 'navbatda — Claude joriy ishni tugatgach o\'qiydi';
+    contentEl.appendChild(tag);
+  }
+
+  // Bitta navbat tugadi: eng eski kutayotgan xabar endi ishlanmoqda.
+  // `true` qaytarsa — hali navbatda xabar bor, ya'ni ish davom etadi.
+  function releaseOldestQueued() {
+    const msgId = queuedIds.shift();
+    if (msgId) {
+      const line = messagesEl.querySelector(`.line.queued[data-msg-id="${CSS.escape(msgId)}"]`);
+      if (line) {
+        line.classList.remove('queued');
+        const tag = line.querySelector('.queued-tag');
+        if (tag) tag.remove();
+      }
+    }
+    return queuedIds.length > 0 || !!msgId;
+  }
 
   // Enter yuboradimi yoki yangi qator qo'shadimi. Telefonda ko'p qatorli
   // matn yozish uchun har safar Shift+Enter bosish noqulay (virtual

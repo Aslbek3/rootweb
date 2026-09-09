@@ -1662,3 +1662,30 @@ pre.has-copy .copy-btn {
   word-break: break-word;
 }
 .pcmd-full .copy-btn { position: absolute; top: 7px; right: 7px; }
+
+/* ============================================================
+   Navbatda turgan xabar
+   ============================================================
+   Claude ishlayotgan paytda yuborilgan xabar darhol uzatilmaydi — navbatda
+   kutadi. Buni ochiq ko'rsatmasak foydalanuvchi "yubordimmi yo'qmi?" deb
+   qoladi. Server xabarni SDK'ga uzatganda `message_delivered` keladi va
+   bu holat olib tashlanadi. */
+.line.queued .line-content { opacity: 0.62; }
+.line.queued .marker { opacity: 0.45; }
+.queued-tag {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent-bright);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.queued-tag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
