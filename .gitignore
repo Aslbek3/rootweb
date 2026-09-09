@@ -5,3 +5,20 @@ server/data/
 CLAUDE.md
 .env.bak_*
 .env.*
+
+# ⚠️ Bu repo OCHIQ (public). Quyidagilar hech qachon commit qilinmasin —
+# rootweb kodi VPS'ning o'zida tahrirlanadi, ya'ni bitta noto'g'ri
+# `git add -A` maxfiy fayllarni ochiq repoga olib chiqishi mumkin.
+# (Boshlang'ich importda aynan shunday `.bashrc`/`.profile` tushib qolgan edi.)
+.claude/
+.ssh/
+*.pem
+*.key
+id_rsa*
+*credential*
+*.session
+*.session-journal
+.bash_history
+.bashrc
+.profile
+.bash_logout

@@ -2,17 +2,26 @@
 <html lang="uz">
 <head>
 <meta charset="utf-8">
-<script>(function(){try{var t=localStorage.getItem('rootwebTheme');if(t&&t!=='claude')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<!-- Mavzuni sahifa chizilishidan OLDIN qo'yadi (FOUC bo'lmasligi uchun).
+     Inline emas, alohida fayl — shunda CSP `script-src 'self'` qat'iy
+     bo'la oladi va 'unsafe-inline' kerak bo'lmaydi. -->
+<script src="/theme-boot.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Claude Code Web</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#262624">
 <link rel="apple-touch-icon" href="/icon.svg">
-<!-- Fayl ko'ruvchidagi syntax highlighting uchun (faqat READ rejimida, muharrir
-     hali oddiy textarea) — CDN orqali, npm bog'liqligiga aylantirilmagan. -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
+<!-- Fayl ko'ruvchidagi syntax highlighting (faqat READ rejimida, muharrir
+     hali oddiy textarea).
+     ⚠️ Avval bu cdnjs'dan, `integrity` (SRI) sarlavhasisiz yuklanardi. Bu
+     ilova root shell beradi, ya'ni CDN buzilsa yoki ushlab qolinsa —
+     autentifikatsiyalangan origin ichida ixtiyoriy JS ishga tushib, butun
+     VPS qo'ldan ketardi. Sintaksis bo'yash kabi kosmetik funksiya uchun bu
+     juda qimmat narx edi, shuning uchun fayl `public/vendor/` ga
+     ko'chirildi — tashqi bog'liqlik butunlay yo'q. -->
+<link rel="stylesheet" href="/vendor/highlight-github-dark.min.css">
+<script src="/vendor/highlight.min.js" defer></script>
 </head>
 <body>
   <div class="app-shell">

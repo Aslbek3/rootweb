@@ -319,6 +319,18 @@ button.icon-btn#fileSaveBtn { color: var(--ok); border-color: var(--ok); }
 .line-content { min-width: 0; white-space: pre-wrap; word-wrap: break-word; }
 .line-content p { margin: 0 0 6px; }
 .line-content p:last-child { margin-bottom: 0; }
+/* Markdown sarlavha/ro'yxat/kursiv — `renderMarkdown` endi bularni ham
+   chiqaradi (avval `## sarlavha` va `- band` xom matn bo'lib ko'rinardi). */
+.line-content h4, .line-content h5, .line-content h6 {
+  margin: 10px 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.line-content h4:first-child, .line-content h5:first-child, .line-content h6:first-child { margin-top: 0; }
+.line-content ul { margin: 4px 0 6px; padding-left: 18px; }
+.line-content li { margin: 2px 0; }
+.line-content em { font-style: italic; opacity: 0.92; }
 .line-content pre {
   background: var(--bg-elev);
   border: 1px solid var(--border);
