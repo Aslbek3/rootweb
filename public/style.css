@@ -711,12 +711,17 @@ button.icon-btn-sm:active { background: var(--bg-elev-3); color: var(--text); }
   display: flex;
   flex-direction: column;
   transform: translateX(-100%);
-  transition: transform .2s ease-out;
+  visibility: hidden;
+  transition: transform .2s ease-out, visibility 0s linear .2s;
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
   box-shadow: 40px 0 80px -20px rgba(0, 0, 0, 0.5);
 }
-.drawer.open { transform: translateX(0); }
+.drawer.open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform .2s ease-out, visibility 0s;
+}
 
 .drawer-header {
   display: flex;
@@ -978,11 +983,16 @@ button.icon-btn.project-del:active { color: var(--danger); }
   display: flex;
   flex-direction: column;
   transform: translateY(100%);
-  transition: transform .2s ease-out;
+  visibility: hidden;
+  transition: transform .2s ease-out, visibility 0s linear .2s;
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
 }
-.file-viewer.open { transform: translateY(0); }
+.file-viewer.open {
+  transform: translateY(0);
+  visibility: visible;
+  transition: transform .2s ease-out, visibility 0s;
+}
 .file-viewer-header {
   display: flex;
   align-items: center;
@@ -1698,9 +1708,20 @@ pre.has-copy .copy-btn {
   border-radius: var(--radius) var(--radius) 0 0;
   box-shadow: 0 -24px 60px -24px rgba(0, 0, 0, 0.75);
   transform: translateY(101%);
-  transition: transform .22s cubic-bezier(0.22, 1, 0.36, 1);
+  /* ⚠️ Yopiq panel BOSILMASLIGI va Tab bilan fokus OLMASLIGI kerak.
+     Faqat transform/opacity bilan yashirish yetarli emas: element hali
+     ham hodisalarni qabul qiladi. `visibility` kechiktirilgan holda
+     o'zgaradi, shunda yopilish animatsiyasi ko'rinib qoladi. */
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform .22s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear .22s;
 }
-.settings-sheet.open { transform: translateY(0); }
+.settings-sheet.open {
+  transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition: transform .22s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
+}
 
 /* Kompyuterda markazda, tor kartochka sifatida */
 @media (min-width: 700px) {
@@ -1715,9 +1736,13 @@ pre.has-copy .copy-btn {
     border: 1px solid var(--border-strong);
     transform: translate(-50%, -46%) scale(0.97);
     opacity: 0;
-    transition: transform .18s ease, opacity .18s ease;
+    transition: transform .18s ease, opacity .18s ease, visibility 0s linear .18s;
   }
-  .settings-sheet.open { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  .settings-sheet.open {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+    transition: transform .18s ease, opacity .18s ease, visibility 0s;
+  }
 }
 
 .settings-header {
