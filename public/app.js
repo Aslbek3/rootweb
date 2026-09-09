@@ -72,10 +72,10 @@
   let projectsList = [];
   let activeProjectId = null;
   let currentDir = '.';
-  // Non-null while browsing a "papkalar" (folder bookmark) absolute path
-  // instead of the active loyiha/project — see loadFolderBookmarks() below.
-  // Kept independent of activeProjectId so jumping to a bookmark never sends
-  // switch_project (Claude's active conversation/session stays untouched).
+  // Non-null while browsing an absolute path outside the active loyiha/project
+  // (e.g. via gotoRootBtn's "/root'ga o'tish"). Kept independent of
+  // activeProjectId so jumping there never sends switch_project (Claude's
+  // active conversation/session stays untouched).
   let browseRoot = null;
   let lastCwd = '';
   let isSwitching = false;
@@ -949,8 +949,9 @@
     browseRoot = null;
     activeProjectId = p.id;
     if (sameProject) {
-      // Loyihaning o'zi allaqachon faol, faqat "papkalar" yorliqidan qaytilyapti —
-      // switch_project shart emas, shunchaki fayllar ko'rinishini qayta yuklash yetarli.
+      // Loyihaning o'zi allaqachon faol, faqat boshqa (browseRoot) yo'ldan
+      // qaytilyapti — switch_project shart emas, shunchaki fayllar
+      // ko'rinishini qayta yuklash yetarli.
       currentDir = '.';
       loadFiles();
     } else {
