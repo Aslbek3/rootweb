@@ -16,6 +16,20 @@
   const searchPrev = document.getElementById('searchPrev');
   const searchNext = document.getElementById('searchNext');
   const searchClose = document.getElementById('searchClose');
+  const panelStatus = document.getElementById('panelStatus');
+  const statusBody = document.getElementById('statusBody');
+  const emergencyBox = document.getElementById('emergencyBox');
+  const unbanForm = document.getElementById('unbanForm');
+  const unbanIpInput = document.getElementById('unbanIp');
+  const allowSshBtn = document.getElementById('allowSshBtn');
+  const bannedList = document.getElementById('bannedList');
+  const devicesTab = document.getElementById('devicesTab');
+  const panelDevices = document.getElementById('panelDevices');
+  const thisDeviceList = document.getElementById('thisDeviceList');
+  const addDeviceForm = document.getElementById('addDeviceForm');
+  const newDeviceNameInput = document.getElementById('newDeviceName');
+  const newDeviceUrlInput = document.getElementById('newDeviceUrl');
+  const deviceListEl = document.getElementById('deviceList');
   const settingsBtn = document.getElementById('settingsBtn');
   const settingsSheet = document.getElementById('settingsSheet');
   const settingsOverlay = document.getElementById('settingsOverlay');
@@ -91,6 +105,7 @@
   let reconnectDelay = 1000;
   let typingEl = null;
   let projectsList = [];
+  let devicesList = [];
   let activeProjectId = null;
   let currentDir = '.';
   // Non-null while browsing an absolute path outside the active loyiha/project
@@ -1395,8 +1410,12 @@
       panelProjects.classList.toggle('hidden', tab !== 'projects');
       panelFiles.classList.toggle('hidden', tab !== 'files');
       panelBots.classList.toggle('hidden', tab !== 'bots');
+      if (panelDevices) panelDevices.classList.toggle('hidden', tab !== 'devices');
+      if (panelStatus) panelStatus.classList.toggle('hidden', tab !== 'status');
       if (tab === 'files') { currentDir = '.'; loadFiles(); }
       if (tab === 'bots') { loadBotList(); startBotPolling(); } else { stopBotPolling(); }
+      if (tab === 'devices') { loadDevices(); renderDeviceList(); loadThisDevice(); }
+      if (tab === 'status') loadStatus();
     });
   });
 
@@ -1893,6 +1912,130 @@
   fileViewerCloseBtn.addEventListener('click', closeFileViewer);
   fileViewerOverlay.addEventListener('click', closeFileViewer);
 
+  // ================= qurilmalar (ixtiyoriy, SHOW_DEVICES_TAB) =================
+  // Bir xil tarmoqdagi boshqa claude-web nusxalariga tezkor o'tish
+  // ro'yxati (localStorage). Lokal Wi-Fi holati uchun yaratilgan;
+  // VPS o'rnatmasida ixtiyoriy — `config.js` bayrog'i bilan yoqiladi.
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+
+  async function loadThisDevice() {
+    thisDeviceList.innerHTML = '<div class="empty-hint">Yuklanmoqda...</div>';
+    try {
+      const res = await fetch('/api/device-info');
+      const data = await res.json();
+      thisDeviceList.innerHTML = '';
+      if (!data.ips || !data.ips.length) {
+        thisDeviceList.innerHTML = '<div class="empty-hint">Lokal tarmoq manzili topilmadi.</div>';
+        return;
+      }
+      for (const ip of data.ips) {
+        const url = `http://${ip.address}:${data.port}`;
+        const row = document.createElement('div');
+        row.className = 'this-device-addr';
+        row.innerHTML = '<span class="addr-url"></span><span class="addr-tag"></span>';
+        row.querySelector('.addr-url').textContent = url;
+        row.querySelector('.addr-tag').textContent = ip.name;
+        row.addEventListener('click', async () => {
+          const tagEl = row.querySelector('.addr-tag');
+          const original = ip.name;
+          try {
+            await navigator.clipboard.writeText(url);
+            tagEl.textContent = 'nusxalandi';
+          } catch {
+            tagEl.textContent = 'nusxalab bo\'lmadi';
+          }
+          setTimeout(() => { tagEl.textContent = original; }, 1500);
+        });
+        thisDeviceList.appendChild(row);
+      }
+    } catch {
+      thisDeviceList.innerHTML = '<div class="empty-hint">Serverga ulanib bo\'lmadi</div>';
+    }
+  }
+
+  const DEVICES_KEY = 'claudeWebDevices';
+
+  function genId() {
+    if (window.crypto && crypto.randomUUID) {
+      try { return crypto.randomUUID(); } catch { /* insecure context (plain http) - fall through */ }
+    }
+    return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function loadDevices() {
+    try { devicesList = JSON.parse(localStorage.getItem(DEVICES_KEY) || '[]'); }
+    catch { devicesList = []; }
+  }
+
+  function saveDevices() {
+    localStorage.setItem(DEVICES_KEY, JSON.stringify(devicesList));
+  }
+
+  function renderDeviceList() {
+    deviceListEl.innerHTML = '';
+    if (!devicesList.length) {
+      deviceListEl.innerHTML = '<div class="empty-hint">Hali qurilma qo\'shilmagan.</div>';
+      return;
+    }
+    for (const d of devicesList) {
+      const row = document.createElement('div');
+      row.className = 'project-row';
+      const info = document.createElement('div');
+      info.className = 'project-info';
+      info.innerHTML = '<div class="project-label"><span class="online-dot"></span><span class="project-label-text"></span></div><div class="project-path"></div>';
+      info.querySelector('.online-dot').dataset.device = d.id;
+      info.querySelector('.project-label-text').textContent = d.name;
+      info.querySelector('.project-path').textContent = d.url;
+      info.addEventListener('click', () => { window.location.href = d.url; });
+      const delBtn = document.createElement('button');
+      delBtn.className = 'icon-btn project-del';
+      delBtn.title = "O'chirish";
+      delBtn.setAttribute('aria-label', "O'chirish");
+      delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12"/><path d="M10 11v6M14 11v6"/></svg>';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        devicesList = devicesList.filter((x) => x.id !== d.id);
+        saveDevices();
+        renderDeviceList();
+      });
+      row.appendChild(info);
+      row.appendChild(delBtn);
+      deviceListEl.appendChild(row);
+    }
+    pingDevices();
+  }
+
+  async function pingDevices() {
+    for (const d of devicesList) {
+      const dot = deviceListEl.querySelector(`.online-dot[data-device="${CSS.escape(d.id)}"]`);
+      if (!dot) continue;
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(d.url.replace(/\/$/, '') + '/api/ping', { signal: controller.signal });
+        clearTimeout(t);
+        dot.classList.toggle('online', res.ok);
+      } catch {
+        dot.classList.remove('online');
+      }
+    }
+  }
+
+  addDeviceForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = newDeviceNameInput.value.trim();
+    let url = newDeviceUrlInput.value.trim();
+    if (!name || !url) return;
+    if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+    devicesList.push({ id: genId(), name, url });
+    saveDevices();
+    newDeviceNameInput.value = '';
+    newDeviceUrlInput.value = '';
+    renderDeviceList();
+  });
+
+
   // ---------------- botlar (PM2) ----------------
 
   const PM2_STATUS_LABEL = { online: 'ishlayapti', stopped: "to'xtatilgan", errored: 'xato', stopping: "to'xtamoqda", launching: 'ishga tushmoqda' };
@@ -1982,6 +2125,7 @@
         </div>
         ${sev === 'alert' ? '<div class="bot-warning">⚠️ Tez-tez qayta ishga tushyapti — loglarni tekshiring</div>' : ''}
         <div class="bot-actions">
+          <button type="button" class="bot-chat-btn" title="Shu bot bilan suhbat">💬 suhbat</button>
           <button type="button" class="bot-logs-btn" title="Loglar">loglar</button>
           <button type="button" class="bot-restart-btn" title="Restart">restart</button>
           <button type="button" class="bot-stop-btn" title="To'xtatish">to'xtatish</button>
@@ -2007,6 +2151,7 @@
         if (!ok) return;
         await pm2Action(p.name, 'stop');
       });
+      row.querySelector('.bot-chat-btn').addEventListener('click', () => openBotChat(p));
       row.querySelector('.bot-logs-btn').addEventListener('click', () => showBotLogs(p.name));
       botListEl.appendChild(row);
     }
@@ -2064,6 +2209,222 @@
       if (liveLogBtn) liveLogBtn.classList.remove('on');
     });
     logStream.addEventListener('end', () => stopLogStream());
+  }
+
+
+
+  // ================= VPS holati va favqulodda amallar =================
+  //
+  // Nega bu Claude orqali emas: "hujum bo'ldimi", "yuklama qanday",
+  // "disk to'lmadimi" — deterministik savollar. Claude'dan so'ralganda u
+  // 5-10 buyruq ishga tushiradi, natijalar kontekstga tushadi va sessiya
+  // oxirigacha har navbatda qayta yuboriladi. Bu yerda: bir so'rov, 0 token.
+  //
+  // Favqulodda amallar ayniqsa muhim: fail2ban/UFW ga tushib qolgan paytda
+  // Claude sekin bo'lishi yoki limitga urilishi mumkin — chiqish yo'li
+  // AI'ga bog'liq bo'lmasligi kerak.
+
+  function fmtUptime(sec) {
+    if (!sec) return '—';
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    if (d) return `${d} kun ${h} soat`;
+    const m = Math.floor((sec % 3600) / 60);
+    return h ? `${h} soat ${m} daq` : `${m} daq`;
+  }
+
+  // Foizga qarab rang: 0-69 normal, 70-89 ogohlantirish, 90+ xavfli.
+  function pctTier(pct) {
+    if (pct == null) return '';
+    if (pct >= 90) return 'critical';
+    if (pct >= 70) return 'warning';
+    return '';
+  }
+
+  function statusBar(label, pct, detail) {
+    const p = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+    return `
+      <div class="rl-row">
+        <div class="rl-label-row"><span class="rl-name">${escapeHtml(label)}</span><span class="rl-pct">${pct == null ? '—' : p + '%'}</span></div>
+        <div class="rl-track"><div class="rl-fill ${pctTier(pct)}" style="width:${p}%"></div></div>
+        <div class="rl-reset">${escapeHtml(detail || '')}</div>
+      </div>`;
+  }
+
+  async function loadStatus() {
+    statusBody.innerHTML = '<div class="empty-hint">Yuklanmoqda…</div>';
+    let s;
+    try {
+      const res = await fetch('/api/status');
+      s = await res.json();
+      if (!res.ok) throw new Error(s.error || 'Xatolik');
+    } catch (err) {
+      statusBody.innerHTML = `<div class="empty-hint">⚠️ ${escapeHtml(err.message || "Serverga ulanib bo'lmadi")}</div>`;
+      return;
+    }
+
+    const parts = [];
+    parts.push(`<div class="status-head">${escapeHtml(s.host || '')} · ${fmtUptime(s.uptimeSec)} ishlayapti</div>`);
+
+    parts.push('<div class="rate-limit-stats">');
+    if (s.load) {
+      parts.push(statusBar('Protsessor yuklamasi', s.load.pct,
+        `${s.load.m1} / ${s.load.m5} / ${s.load.m15}  ·  ${s.load.cores} yadro`));
+    }
+    if (s.memory) {
+      parts.push(statusBar('Xotira', s.memory.usedPct,
+        `${s.memory.usedGb ?? '?'} GB / ${s.memory.totalGb} GB band`));
+    }
+    if (s.disk) {
+      parts.push(statusBar('Disk', s.disk.usedPct,
+        `${s.disk.usedGb} GB / ${s.disk.totalGb} GB band`));
+    }
+    parts.push('</div>');
+
+    // Xavfsizlik ko'rsatkichlari
+    const sec = [];
+    if (s.fail2ban) {
+      const worst = s.fail2ban.jails[0];
+      sec.push(`<div class="usage-row"><span>Hozir banlangan IP</span><span>${s.fail2ban.totalBanned}</span></div>`);
+      if (worst && worst.banned > 0) {
+        sec.push(`<div class="usage-row"><span>Eng ko'p</span><span>${escapeHtml(worst.jail)} (${worst.banned})</span></div>`);
+      }
+    }
+    if (s.ssh) {
+      sec.push(`<div class="usage-row"><span>SSH: muvaffaqiyatsiz (24s)</span><span>${s.ssh.failed}</span></div>`);
+      sec.push(`<div class="usage-row"><span>SSH: muvaffaqiyatli (24s)</span><span>${s.ssh.accepted}</span></div>`);
+    }
+    if (sec.length) {
+      parts.push('<div class="usage-stats"><div class="usage-stats-title">Xavfsizlik (24 soat)</div>' + sec.join('') + '</div>');
+    }
+    if (!s.fail2ban) {
+      parts.push('<div class="empty-hint">fail2ban ma\'lumoti mavjud emas (o\'rnatilmagan yoki huquq yo\'q).</div>');
+    }
+
+    statusBody.innerHTML = parts.join('');
+
+    // Favqulodda bo'limi faqat root instansiyasida
+    if (emergencyBox) {
+      emergencyBox.classList.toggle('hidden', !instanceConfig.isRoot);
+      if (instanceConfig.isRoot) loadBannedList();
+    }
+  }
+
+  async function loadBannedList() {
+    try {
+      const res = await fetch('/api/emergency/banned');
+      const data = await res.json();
+      if (!res.ok) { bannedList.innerHTML = ''; return; }
+      if (!data.jails || !data.jails.length) {
+        bannedList.innerHTML = '<div class="empty-hint">Banlangan IP yo\'q.</div>';
+        return;
+      }
+      bannedList.innerHTML = '';
+      for (const j of data.jails) {
+        const row = document.createElement('div');
+        row.className = 'banned-row';
+        row.innerHTML = '<span class="banned-jail"></span><span class="banned-ips"></span>';
+        row.querySelector('.banned-jail').textContent = j.jail;
+        row.querySelector('.banned-ips').textContent = j.ips.join(', ');
+        bannedList.appendChild(row);
+      }
+    } catch { /* tarmoq xatosi — ro'yxat bo'sh qoladi */ }
+  }
+
+  if (unbanForm) {
+    unbanForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ip = unbanIpInput.value.trim();
+      if (!ip) return;
+      const ok = await confirmDialog({
+        title: `${ip} banini yechish`,
+        message: 'Bu IP barcha fail2ban jail\'laridan chiqariladi.',
+        confirmText: 'Yechish',
+      });
+      if (!ok) return;
+      try {
+        const res = await fetch('/api/emergency/unban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip }),
+        });
+        const data = await res.json();
+        if (!res.ok) { addSystemNote('⚠️ ' + (data.error || 'Xatolik')); return; }
+        addSystemNote(data.unbannedFrom.length
+          ? `${ip} chiqarildi: ${data.unbannedFrom.join(', ')}`
+          : `${ip} hech qaysi jail'da banlangan emas edi`);
+        loadBannedList();
+      } catch {
+        addSystemNote("⚠️ Serverga ulanib bo'lmadi");
+      }
+    });
+  }
+
+  if (allowSshBtn) {
+    allowSshBtn.addEventListener('click', async () => {
+      const ip = unbanIpInput.value.trim();
+      if (!ip) { addSystemNote('⚠️ Avval IP manzilni kiriting'); return; }
+      const ok = await confirmDialog({
+        title: `${ip} ga SSH ochish`,
+        message: 'Bu IP uchun 22-port (SSH) firewall\'da DOIMIY ochiladi. '
+          + 'Faqat o\'zingizning ishonchli manzilingiz bo\'lsa qiling.',
+        confirmText: 'Ochish',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await fetch('/api/emergency/allow-ssh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip }),
+        });
+        const data = await res.json();
+        addSystemNote(res.ok ? `${ip} uchun SSH ochildi` : '⚠️ ' + (data.error || 'Xatolik'));
+      } catch {
+        addSystemNote("⚠️ Serverga ulanib bo'lmadi");
+      }
+    });
+  }
+
+  // ================= bot suhbati =================
+  //
+  // Botlar panelidagi 💬 tugma. Muammo shu edi: har safar chatga
+  // "sen VPS'dasan, T loyihani top" deb yozish kerak bo'lardi — Claude
+  // qidirish uchun 5-10 buyruq sarflardi va asosiy ish hali boshlanmagan
+  // bo'lardi.
+  //
+  // Endi: papka PM2'ning o'zidan olinadi, sessiya TOZA holda o'sha
+  // papkada boshlanadi. Claude Code `CLAUDE.md`ni avtomatik o'qiydi,
+  // `OXIRGI-ISH.md` esa oxirgi amallarni aytadi — ya'ni "nima bo'lgan edi"
+  // ham ma'lum. Shuning uchun eski suhbatni saqlash kerak emas.
+  async function openBotChat(p) {
+    const ok = await confirmDialog({
+      title: `"${p.name}" bilan suhbat`,
+      message: 'Yangi suhbat ochiladi. Claude to\'g\'ridan-to\'g\'ri shu botning '
+        + 'papkasida ishlaydi va CLAUDE.md / OXIRGI-ISH.md fayllaridan '
+        + 'loyihani darhol tushunadi.\n\nShu botning oldingi suhbati bo\'lsa, u tozalanadi.',
+      confirmText: 'Boshlash',
+    });
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`/api/bot-chat/${encodeURIComponent(p.name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        addSystemNote('⚠️ ' + (data.error || 'Suhbatni ochib bo\'lmadi'));
+        return;
+      }
+      await fetchProjects();
+      // Drawer yopiladi va chat o'sha loyihaga o'tadi.
+      closeDrawer();
+      selectProject(data.project);
+      addSystemNote(`"${p.name}" bilan yangi suhbat — papka: ${data.project.path}`);
+    } catch {
+      addSystemNote("⚠️ Serverga ulanib bo'lmadi");
+    }
   }
 
   async function showBotLogs(name) {
@@ -2411,6 +2772,24 @@
       });
     });
   }
+
+
+  // ================= instansiya sozlamalari =================
+  // Bitta kod ikki xil o'rnatmada ishlaydi (root / sandbox) — qaysi
+  // funksiyalar ko'rinishini server `/api/config` orqali aytadi.
+  let instanceConfig = { instanceMode: 'root', isRoot: true, showDevicesTab: false };
+
+  async function loadInstanceConfig() {
+    try {
+      const res = await fetch('/api/config');
+      if (!res.ok) return;
+      instanceConfig = await res.json();
+    } catch { /* tarmoq xatosi — standart qiymatlar qoladi */ }
+    if (devicesTab) devicesTab.classList.toggle('hidden', !instanceConfig.showDevicesTab);
+    document.documentElement.dataset.instance = instanceConfig.instanceMode;
+  }
+
+  loadInstanceConfig();
 
   fetchProjects();
   setInterval(fetchProjects, 5000);

@@ -17,7 +17,7 @@
 // Statik fayllar o'zgarganda uni oshiring (yoki deploy skriptida
 // avtomatlashtiring), aks holda foydalanuvchi eski qobiqni ko'rishda
 // davom etadi.
-const CACHE_VERSION = 'rootweb-v4';
+const CACHE_VERSION = 'rootweb-v5';
 
 // Faqat login talab qilmaydigan yoki o'zgarmas statik resurslar.
 const SHELL = [

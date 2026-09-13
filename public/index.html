@@ -115,9 +115,11 @@
   <aside id="drawer" class="drawer">
     <div class="drawer-header">
       <div class="drawer-tabs">
+        <button type="button" class="drawer-tab" data-tab="status">holat</button>
         <button type="button" class="drawer-tab active" data-tab="projects">loyihalar</button>
         <button type="button" class="drawer-tab" data-tab="files">fayllar</button>
         <button type="button" class="drawer-tab" data-tab="bots">botlar</button>
+        <button type="button" class="drawer-tab hidden" data-tab="devices" id="devicesTab">qurilmalar</button>
       </div>
       <button class="icon-btn" id="drawerCloseBtn" title="Yopish" aria-label="Yopish">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -171,6 +173,36 @@
       <div class="empty-hint">PM2'dagi jarayonlar — holat, CPU/RAM, qayta ishga tushirish soni. Har 12 soniyada avtomatik yangilanadi.</div>
       <div id="botList" class="bot-list"></div>
     </div>
+    <!-- Qurilmalar — ixtiyoriy, SHOW_DEVICES_TAB bayrog'i bilan yoqiladi -->
+    <div class="drawer-panel hidden" id="panelDevices">
+      <div class="this-device">
+        <div class="this-device-label">bu qurilma</div>
+        <div id="thisDeviceList" class="this-device-list"></div>
+      </div>
+      <div class="empty-hint">Boshqa kompyuterda ham shu ilova ishlab turgan bo'lishi kerak. U yerdagi lokal IP:port manzilini qo'shing.</div>
+      <form id="addDeviceForm" class="create-project-form">
+        <input type="text" id="newDeviceName" placeholder="nomi, masalan Ish kompyuteri" required>
+        <input type="text" id="newDeviceUrl" placeholder="http://192.168.1.8:3210" required>
+        <button type="submit">qo'shish</button>
+      </form>
+      <div id="deviceList" class="project-list"></div>
+    </div>
+
+    <!-- VPS holati — Claude'siz, to'g'ridan-to'g'ri o'qiladi (0 token) -->
+    <div class="drawer-panel hidden" id="panelStatus">
+      <div id="statusBody"></div>
+      <div id="emergencyBox" class="emergency-box hidden">
+        <div class="emergency-title">Favqulodda</div>
+        <div class="empty-hint">Fail2ban yoki firewall'ga tushib qolsangiz — Claude'siz, to'g'ridan-to'g'ri.</div>
+        <form id="unbanForm" class="create-project-form">
+          <input type="text" id="unbanIp" placeholder="IP manzil, masalan 84.54.x.x" required>
+          <button type="submit">banni yechish</button>
+        </form>
+        <button type="button" id="allowSshBtn" class="new-project-toggle">+ shu IP ga SSH (22) ni doimiy ochish</button>
+        <div id="bannedList" class="banned-list"></div>
+      </div>
+    </div>
+
   </aside>
 
   <!-- ================= Sozlamalar ================= -->

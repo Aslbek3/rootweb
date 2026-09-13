@@ -7,6 +7,8 @@ workspace/
 CLAUDE.md
 .env.bak_*
 .env.*
+# Namuna fayl — sirlar yo'q, commit qilinishi KERAK
+!.env.example
 
 # ⚠️ Bu repo OCHIQ (public). Quyidagilar hech qachon commit qilinmasin —
 # rootweb kodi VPS'ning o'zida tahrirlanadi, ya'ni bitta noto'g'ri

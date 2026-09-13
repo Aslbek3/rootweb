@@ -28,6 +28,9 @@ const authManager = require('./authManager');
 const pm2Manager = require('./pm2Manager');
 const auditLog = require('./auditLog');
 const authLib = require('./auth');
+const config = require('./config');
+const systemStatus = require('./systemStatus');
+const emergency = require('./emergency');
 
 const PORT = process.env.PORT || 3210;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -58,6 +61,63 @@ const { issueToken, verifyToken } = authLib.createAuth(SESSION_SECRET);
 const app = express();
 if (TRUST_PROXY) app.set('trust proxy', 1);
 app.disable('x-powered-by');
+
+// ---------------- ichki veb-ilovaga proksi (ixtiyoriy) ----------------
+//
+// `PROXY_PORT` berilgan bo'lsa, shu prefiks ostidagi so'rovlar lokal
+// portdagi MUSTAQIL ilovaga uzatiladi (sandbox'da `savdo-hisob`, 3212).
+// U o'z bazasi va o'z cookie'si bilan alohida autentifikatsiya qiladi.
+//
+// Bu blok ATAYLAB eng boshda — json parser va auth middleware'dan OLDIN:
+//   1) so'rov tanasi (POST body) bu yergacha iste'mol qilinmagan bo'lishi
+//      kerak, aks holda ilovaga bo'sh body yetib boradi;
+//   2) asosiy ilovaning auth'i bu yo'lni umuman ko'rmasligi kerak.
+if (config.PROXY_PORT) {
+  const PFX = config.PROXY_PREFIX;
+
+  // Prefiksga "/" siz kirilsa "/" bilan versiyasiga yo'naltiramiz, aks holda
+  // ichkaridagi nisbiy yo'llar (style.css, api/...) buziladi.
+  // ⚠️ `req.path` ANIQ tekshiriladi: Express'da strict routing o'chiq
+  // bo'lgani uchun `app.get('/savdo')` "/savdo/" ga ham mos keladi va
+  // tekshiruvsiz bu CHEKSIZ REDIRECT HALQASI bo'lardi.
+  app.get(PFX, (req, res, next) => {
+    if (req.path !== PFX) return next();
+    res.redirect(301, `${PFX}/`);
+  });
+
+  app.use(PFX, (req, res) => {
+    const proxyReq = http.request(
+      {
+        host: '127.0.0.1',
+        port: config.PROXY_PORT,
+        method: req.method,
+        path: req.url === '' ? '/' : req.url,
+        headers: { ...req.headers, host: `127.0.0.1:${config.PROXY_PORT}` },
+      },
+      (proxyRes) => {
+        const headers = { ...proxyRes.headers };
+        // Ilova o'zini "ildizda" deb biladi (`res.redirect('/login.html')`) —
+        // prefiksni qo'shamiz, aks holda brauzer asosiy saytga ketadi.
+        if (headers.location && headers.location.startsWith('/') && !headers.location.startsWith(PFX)) {
+          headers.location = PFX + headers.location;
+        }
+        // Cookie faqat shu prefiksga biriktirilsin — asosiy ilovaning
+        // yo'llariga tasodifan yuborilmasin.
+        if (headers['set-cookie']) {
+          headers['set-cookie'] = headers['set-cookie'].map((c) => c.replace(/Path=\//i, `Path=${PFX}`));
+        }
+        res.writeHead(proxyRes.statusCode, headers);
+        proxyRes.pipe(res);
+      },
+    );
+    proxyReq.on('error', (err) => {
+      console.error(`${PFX} proksi xatosi:`, err.message);
+      if (!res.headersSent) res.status(502).json({ error: 'Ichki ilova hozircha javob bermayapti' });
+    });
+    req.pipe(proxyReq);
+  });
+}
+
 app.use(express.json({ limit: '1mb' }));
 
 // ---------------- xavfsizlik sarlavhalari ----------------
@@ -201,6 +261,17 @@ app.use((req, res, next) => {
   return next();
 });
 
+// Klient qaysi instansiyada ishlayotganini va qaysi funksiyalar yoqilganini
+// shu yerdan biladi (`config.js` — bitta kod, ikki xil o'rnatma).
+app.get('/api/config', (req, res) => {
+  res.json({
+    instanceMode: config.MODE,
+    isRoot: config.IS_ROOT,
+    showDevicesTab: config.SHOW_DEVICES_TAB,
+    defaultPermissionMode: config.DEFAULT_PERMISSION_MODE,
+  });
+});
+
 // ---------------- device info ----------------
 
 // Lets the "Qurilmalar" tab show this machine's own local-network address(es)
@@ -340,6 +411,47 @@ app.post('/api/pm2/:name/stop', async (req, res) => {
 
 // Jonli log oqimi (Server-Sent Events). Bitta surat olish uchun pastdagi
 // `/logs` ishlatiladi; bu esa `tail -f` kabi ochiq turadi.
+// "Shu bot bilan suhbat" — botlar panelidagi 💬 tugma shu yerga keladi.
+//
+// Muammo: har safar chatga "sen VPS'dasan, T loyihani top" deb yozish
+// kerak edi. Claude qidirish uchun 5-10 buyruq sarflardi, asosiy ish esa
+// hali boshlanmagan bo'lardi — va bularning hammasi bitta uzun sessiyada
+// to'planib borardi.
+//
+// Yechim: papkani PM2'ning o'zidan olamiz (`pm_cwd`), loyiha sifatida
+// ro'yxatga qo'shamiz va sessiyani TOZA holda o'sha papkada boshlaymiz.
+// Claude Code `CLAUDE.md`ni avtomatik o'qiydi; `OXIRGI-ISH.md` esa oxirgi
+// amallarni aytadi — ya'ni "nima bo'lgan edi" ham darhol ma'lum.
+//
+// Har bosishda YANGI suhbat: eski kontekst kerak emas, chunki ish tarixi
+// `OXIRGI-ISH.md`da yozilgan. Bu token sarfini ham keskin kamaytiradi.
+app.post('/api/bot-chat/:name', async (req, res) => {
+  const name = req.params.name;
+  let procs;
+  try {
+    procs = await pm2Manager.list();
+  } catch (err) {
+    return res.status(502).json({ error: `PM2 javob bermadi: ${err.message}` });
+  }
+  const proc = procs.find((p) => p.name === name);
+  if (!proc) return res.status(404).json({ error: `"${name}" nomli jarayon topilmadi` });
+  if (!proc.cwd) return res.status(400).json({ error: `"${name}" ning ish papkasi aniqlanmadi` });
+
+  let entry;
+  try {
+    // Papka allaqachon loyiha bo'lsa — `upsert` uni yangilaydi, yangi
+    // yozuv yaratmaydi (u yo'l bo'yicha moslashtiradi).
+    entry = projects.upsert(proc.cwd, name, undefined, name);
+  } catch (err) {
+    return res.status(400).json({ error: err.code === 'ENOENT' ? 'Bot papkasi topilmadi' : err.message });
+  }
+
+  // Toza suhbat: eski kontekst tashlanadi, subprocess ham yopiladi.
+  sessionManager.resetSession(entry.id);
+  auditLog.log('bot_chat_opened', { ip: req.ip, bot: name, cwd: proc.cwd, projectId: entry.id });
+  res.json({ project: entry });
+});
+
 app.get('/api/pm2/:name/logs/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -389,6 +501,62 @@ app.get('/api/pm2/:name/logs/stream', (req, res) => {
 app.get('/api/pm2/:name/logs', async (req, res) => {
   try {
     res.json({ logs: await pm2Manager.logs(req.params.name, req.query.lines) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ---------------- VPS holati va favqulodda amallar ----------------
+
+// Holat — ikkala instansiyada ham ishlaydi (o'qish, huquq talab qilmaydi).
+app.get('/api/status', async (req, res) => {
+  try {
+    res.json(await systemStatus.collect());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Favqulodda amallar faqat root instansiyasida. sandbox'da huquq ham yo'q,
+// shuning uchun endpointning o'zi ham yopiq.
+function requireRootInstance(req, res, next) {
+  if (!config.IS_ROOT) return res.status(403).json({ error: 'Bu amal faqat root instansiyasida mavjud' });
+  return next();
+}
+
+app.get('/api/emergency/banned', requireRootInstance, async (req, res) => {
+  try {
+    res.json({ jails: await emergency.bannedList() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/emergency/ssh', requireRootInstance, async (req, res) => {
+  try {
+    res.json(await emergency.sshStatus());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/emergency/unban', requireRootInstance, async (req, res) => {
+  const { ip } = req.body || {};
+  try {
+    const out = await emergency.unbanIp(ip);
+    auditLog.log('emergency_unban', { by: req.ip, ip: out.ip, jails: out.unbannedFrom });
+    res.json(out);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/emergency/allow-ssh', requireRootInstance, async (req, res) => {
+  const { ip } = req.body || {};
+  try {
+    const out = await emergency.allowIpSsh(ip);
+    auditLog.log('emergency_allow_ssh', { by: req.ip, ip: out.ip });
+    res.json(out);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -596,6 +764,27 @@ app.post('/api/auth/submit', (req, res) => {
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// ---------------- markazlashgan xato ishlovchisi ----------------
+//
+// ⚠️ Busiz Express standart ishlovchisi ishlatilardi va u buzuq JSON kelganda
+// TO'LIQ STACK TRACE bilan HTML sahifa qaytarardi — server fayl yo'llari
+// (`D:\...\node_modules\body-parser\...`) tashqariga oshkor bo'lardi.
+// Bu ma'lumot hujumchiga tuzilmani ochib beradi.
+//
+// Endi: xato logga to'liq yoziladi, mijozga esa qisqa JSON boradi.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  // Buzuq JSON — mijoz xatosi, 400.
+  const isBadJson = err instanceof SyntaxError && err.status === 400 && 'body' in err;
+  const status = isBadJson ? 400 : (err.status || err.statusCode || 500);
+  if (!isBadJson) {
+    console.error('So\'rovda xato:', req.method, req.path, '-', err && err.message);
+  }
+  res.status(status).json({
+    error: isBadJson ? "So'rov ma'lumoti noto'g'ri (JSON buzuq)" : 'Serverda xatolik',
+  });
+});
+
 const server = http.createServer(app);
 // maxPayload — bitta WS xabari uchun chegara. Avval `ws`ning standart 100MB'i
 // amal qilardi; rasm biriktirish uchun ~40MB (6 × 7MB) dan ortig'i hech qachon
@@ -648,7 +837,7 @@ async function handleConnection(ws) {
   // history so the client can rebuild the conversation it left off at.
   function attachToProject(project) {
     if (currentSession) currentSession.detach(ws);
-    currentSession = sessionManager.getOrCreateSession(project.id, project.path, project.description);
+    currentSession = sessionManager.getOrCreateSession(project.id, project.path, project.description, project.pm2Name || null);
     currentSession.attach(ws);
     const snap = currentSession.snapshot();
     safeSend({

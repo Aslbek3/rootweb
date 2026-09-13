@@ -4,6 +4,7 @@ const { query } = require('@anthropic-ai/claude-agent-sdk');
 const auditLog = require('./auditLog');
 const { isAutoApprovable } = require('./bashPolicy');
 const { writeJsonAtomic, readJson } = require('./atomicFile');
+const config = require('./config');
 
 // Tool calls that are read-only / low-risk are auto-approved so a phone
 // session isn't interrupted by a permission prompt on every file read.
@@ -42,6 +43,31 @@ const UI_STYLE_PROMPT = `Muloqot uslubi (bu ilova uchun majburiy):
 - Texnik atama ishlatsang, qavs ichida bir og'iz izohla.
 - Ish tugagach qisqacha xulosa qil: nima qilindi va natija nima bo'ldi.
 - Uzun ro'yxat va kod devorlarini tashlama — telefonda o'qish qiyin.`;
+
+// Bot suhbati uchun qo'shimcha ko'rsatma.
+//
+// Muammo: har safar "sen VPS'dasan, T loyihani top" deb yozish kerak edi —
+// Claude `find`/`ls`/`cat` bilan 5-10 buyruq sarflab loyihani qidirardi,
+// asosiy ish esa hali boshlanmagan bo'lardi.
+//
+// Yechim: botlar panelidagi 💬 tugma sessiyani TO'G'RIDAN-TO'G'RI o'sha
+// botning papkasida ochadi (papka PM2'ning o'zidan olinadi). Claude Code
+// `CLAUDE.md`ni avtomatik o'qiydi, `OXIRGI-ISH.md` esa oxirgi amallarni
+// aytadi — ya'ni suhbat birinchi xabardanoq kontekst bilan boshlanadi.
+function botPrompt(botName) {
+  return `Sen hozir "${botName}" boti ustida ishlayapsan. Ish papkasi — shu sessiyaning cwd'si.
+
+- Loyihani QIDIRISH shart emas: allaqachon uning papkasidasan.
+- Bu papkadan tashqariga chiqma. Boshqa bot yoki loyiha so'ralsa, foydalanuvchiga "botlar panelidan o'sha botni tanlang" deb ayt.
+- Papkada CLAUDE.md bo'lsa — u loyihaning asosiy ma'lumoti. OXIRGI-ISH.md bo'lsa — oxirgi amallar tarixi. Ikkalasini ishning boshida hisobga ol.
+- CLAUDE.md yo'q bo'lsa va foydalanuvchi so'rasa — loyihani o'rganib, qisqa CLAUDE.md yozib ber (nima qiladi, qanday ishga tushadi, muhim fayllar, ehtiyot bo'lish kerak bo'lgan joylar).
+
+Ish tugagach OXIRGI-ISH.md ni yangila:
+- Fayl yo'q bo'lsa yarat.
+- Eng YUQORIGA yangi yozuv qo'sh: "## YYYY-MM-DD — qisqa sarlavha", keyin 3-6 qator: nima qilindi, qaysi fayl o'zgardi, natija, keyingi qadam (bo'lsa).
+- Faylda 10 tadan ortiq yozuv to'plansa, eng eskilarini OXIRGI-ISH-ARXIV.md ga ko'chir — bu fayl har sessiyada o'qiladi, shuning uchun qisqa qolishi kerak.
+- Hech narsa o'zgartirmagan bo'lsang (faqat ko'rdim/tekshirdim) — yozuv qo'shma.`;
+}
 
 // How many past events to keep for replay when a client (re)connects.
 const MAX_HISTORY = 500;
@@ -161,7 +187,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 process.once('exit', flushSessionsMeta);
 
-function createSession(projectId, cwd, description) {
+function createSession(projectId, cwd, description, botName) {
   const savedMeta = sessionsMeta[projectId];
   const clients = new Set();
   // Pre-seed from disk (see SESSIONS_META_FILE note above) so a reconnecting
@@ -187,8 +213,11 @@ function createSession(projectId, cwd, description) {
   // tiklardi va buni hech kim sezmasdi. Endi saqlangan rejim tiklanadi;
   // qiymat notanish bo'lsa eng XAVFSIZ rejimga ('default' — hammasi
   // so'raladi) tushamiz, eng qulayiga emas.
+  // Standart rejim instansiyaga bog'liq (`config.js`): root'da "avto",
+  // sandbox'da "manual" — u yerda mijozlarga xizmat qiladigan botlar kodi
+  // turadi, har o'zgarish ko'z bilan tasdiqlansin.
   const ALLOWED_MODES = new Set(['default', 'plan', 'acceptEdits']);
-  let permissionMode = 'acceptEdits';
+  let permissionMode = config.DEFAULT_PERMISSION_MODE;
   if (savedMeta && typeof savedMeta.permissionMode === 'string') {
     permissionMode = ALLOWED_MODES.has(savedMeta.permissionMode) ? savedMeta.permissionMode : 'default';
   }
@@ -274,9 +303,13 @@ function createSession(projectId, cwd, description) {
       systemPrompt: {
         type: 'preset',
         preset: 'claude_code',
-        append: [UI_STYLE_PROMPT, ...(description && description.trim()
-          ? [`Loyiha haqida kontekst:\n${description.trim()}`]
-          : [])].join('\n\n'),
+        append: [
+          UI_STYLE_PROMPT,
+          // Bot suhbati bo'lsa — qaysi bot, papkadan chiqmaslik va
+          // OXIRGI-ISH.md ni yangilash ko'rsatmasi.
+          ...(botName ? [botPrompt(botName)] : []),
+          ...(description && description.trim() ? [`Loyiha haqida kontekst:\n${description.trim()}`] : []),
+        ].join('\n\n'),
       },
       // Reattach to the same Claude session across a server restart (see
       // sessionsMeta above). Absent on a project's very first-ever session,
@@ -435,6 +468,9 @@ function createSession(projectId, cwd, description) {
     attach(ws) { clients.add(ws); },
     detach(ws) { clients.delete(ws); },
     pushUserMessage(text, images) {
+      // Faol suhbat "bo'sh turgan" deb hisoblanmasin — `getOrCreateSession`
+      // faqat ulanishda chaqiriladi, suhbat davomida emas.
+      touchSession(projectId);
       busy = true;
       // Only base64 image bytes go into the live SDK message — history just
       // remembers how many there were, so replay on reconnect stays cheap
@@ -537,8 +573,77 @@ function createSession(projectId, cwd, description) {
   return session;
 }
 
-function getOrCreateSession(projectId, cwd, description) {
-  return sessions.get(projectId) || createSession(projectId, cwd, description);
+// ---------------- resurs cheklovi ----------------
+//
+// HAR BIR sessiya alohida `claude` subprocess — ~300-400 MB. VPS'da 26 ta
+// root bot + 8 ta sandbox bot allaqachon ~4.5 GB egallaydi, ya'ni bir necha
+// loyiha ochilganda OOM killer TASODIFIY jarayonni o'ldiradi: u PostgreSQL
+// yoki to'lov boti bo'lishi mumkin.
+//
+// Shuning uchun ikkita cheklov:
+//   1. bir vaqtda ochiq sessiyalar soni (`MAX_SESSIONS`)
+//   2. bo'sh turgan sessiya avtomatik yopiladi (`SESSION_IDLE_MINUTES`)
+//
+// Ikkalasida ham tarix DISKDA qoladi (`sessions_meta.json`) va `resume`
+// bilan tiklanadi — foydalanuvchi uchun suhbat yo'qolmaydi, faqat
+// subprocess xotiradan bo'shaydi.
+const lastUsedAt = new Map(); // projectId -> timestamp
+
+function touchSession(projectId) {
+  lastUsedAt.set(projectId, Date.now());
+}
+
+// Subprocessni yopadi, lekin diskdagi tarix va `sdkSessionId`ga TEGMAYDI —
+// `resetSession()` dan farqi shu (u suhbatni butunlay o'chiradi).
+//
+// ⚠️ ISH BAJARAYOTGAN sessiya hech qachon yopilmaydi: Claude o'rtada
+// to'xtab qolsa, foydalanuvchi ishi yo'qoladi va u buni tushunmaydi.
+function evictSession(projectId, reason) {
+  const session = sessions.get(projectId);
+  if (!session) return false;
+  const st = session.status();
+  if (st.busy || st.pending > 0) return false;
+  session.invalidate(); // ulangan klientlar qayta ulanadi va tarixni tiklaydi
+  session.close();
+  sessions.delete(projectId);
+  lastUsedAt.delete(projectId);
+  auditLog.log('session_evicted', { projectId, reason });
+  return true;
+}
+
+// Yangi sessiya ochishdan oldin joy bo'shatadi: eng uzoq ishlatilmaganidan
+// boshlab. Hammasi band bo'lsa cheklovdan oshamiz — foydalanuvchini
+// to'sib qo'ygandan ko'ra yaxshiroq, va systemd `MemoryMax` zaxira
+// to'siq bo'lib qoladi.
+function evictOldestIfNeeded() {
+  while (sessions.size >= config.MAX_SESSIONS) {
+    const candidates = [...sessions.keys()].sort(
+      (a, b) => (lastUsedAt.get(a) || 0) - (lastUsedAt.get(b) || 0),
+    );
+    const freed = candidates.some((id) => evictSession(id, 'limit'));
+    if (!freed) {
+      auditLog.log('session_limit_exceeded', { open: sessions.size, max: config.MAX_SESSIONS });
+      return;
+    }
+  }
+}
+
+// Bo'sh turgan sessiyalarni davriy tozalash.
+const IDLE_SWEEP_MS = 5 * 60 * 1000;
+const idleSweep = setInterval(() => {
+  const cutoff = Date.now() - config.SESSION_IDLE_MINUTES * 60 * 1000;
+  for (const id of [...sessions.keys()]) {
+    if ((lastUsedAt.get(id) || 0) < cutoff) evictSession(id, 'idle');
+  }
+}, IDLE_SWEEP_MS);
+if (idleSweep.unref) idleSweep.unref();
+
+function getOrCreateSession(projectId, cwd, description, botName) {
+  touchSession(projectId);
+  const existing = sessions.get(projectId);
+  if (existing) return existing;
+  evictOldestIfNeeded();
+  return createSession(projectId, cwd, description, botName);
 }
 
 // Drops the in-memory conversation AND its persisted sdkSessionId, so the

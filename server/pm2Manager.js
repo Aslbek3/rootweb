@@ -54,6 +54,11 @@ async function list() {
     // "nom to'qnashuvi" — masalan poster-01 vs kanal-01) — shuning uchun
     // `namespace`ni ham qaytaramiz, UI kerak bo'lsa ko'rsatishi mumkin.
     namespace: p.pm2_env && p.pm2_env.namespace,
+    // Bot papkasi — "shu bot bilan suhbat" tugmasi uchun. PM2 jarayonning
+    // ish papkasini o'zi biladi, ya'ni "T loyihani top" deb Claude'ga
+    // qidirtirish shart emas: papka shu yerdan olinadi.
+    cwd: (p.pm2_env && (p.pm2_env.pm_cwd || p.pm2_env.PWD)) || null,
+    script: (p.pm2_env && p.pm2_env.pm_exec_path) || null,
   }));
 }
 
