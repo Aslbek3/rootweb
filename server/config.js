@@ -32,11 +32,6 @@ const DEFAULT_PERMISSION_MODE = IS_ROOT ? 'acceptEdits' : 'default';
 const PROXY_PREFIX = process.env.PROXY_PREFIX || '/savdo';
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 0;
 
-// "Qurilmalar" tabi — bir xil tarmoqdagi boshqa claude-web nusxalariga
-// tezkor o'tish ro'yxati (localStorage'da). Lokal Wi-Fi holati uchun
-// yaratilgan; VPS'da ixtiyoriy.
-const SHOW_DEVICES_TAB = process.env.SHOW_DEVICES_TAB === '1';
-
 // Bir vaqtda ochiq bo'lishi mumkin bo'lgan Claude sessiyalari soni.
 // HAR BIR sessiya alohida `claude` subprocess (~300-400 MB), shuning uchun
 // bu to'g'ridan-to'g'ri xotira cheklovi. VPS'da 26 ta root bot + 8 ta
@@ -54,7 +49,6 @@ module.exports = {
   DEFAULT_PERMISSION_MODE,
   PROXY_PREFIX,
   PROXY_PORT,
-  SHOW_DEVICES_TAB,
   MAX_SESSIONS,
   SESSION_IDLE_MINUTES,
 };

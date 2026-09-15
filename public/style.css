@@ -869,51 +869,6 @@ button.icon-btn-sm:active { background: var(--bg-elev-3); color: var(--text); }
 .row-badge.busy { color: var(--accent-bright); border-color: rgba(217, 119, 87, 0.35); animation: pulse 1.4s infinite; }
 .row-badge.pending { color: var(--danger); border-color: rgba(240, 101, 90, 0.35); }
 
-.this-device {
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 11px 13px;
-}
-.this-device-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-.this-device-list { display: flex; flex-direction: column; gap: 4px; }
-.this-device-addr {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg-elev);
-  border: 1px solid transparent;
-}
-.this-device-addr:active { border-color: var(--accent); }
-.this-device-addr .addr-url {
-  color: var(--accent-bright);
-  font-family: var(--mono);
-  font-size: 12.5px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.this-device-addr .addr-tag { flex-shrink: 0; color: var(--text-dim); font-size: 10.5px; }
-
-.online-dot {
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-dim);
-}
-.online-dot.online { background: var(--ok); }
 .project-del { flex-shrink: 0; }
 button.icon-btn.project-del:active { color: var(--danger); }
 
@@ -1479,38 +1434,6 @@ pre.has-copy .copy-btn {
 .search-hit { background: var(--accent-wash); border-radius: 6px; }
 .search-hit-active { box-shadow: 0 0 0 2px var(--accent); }
 
-/* ============================================================
-   Tez buyruqlar
-   ============================================================ */
-.quick-cmds {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 0 2px 8px;
-  scrollbar-width: none;
-}
-.quick-cmds::-webkit-scrollbar { display: none; }
-.quick-cmds.hidden { display: none; }
-.quick-chip {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-elev);
-  color: var(--text-dim);
-  font-family: var(--sans);
-  font-size: 12.5px;
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-  transition: color .12s ease, border-color .12s ease;
-}
-.quick-chip-add { color: var(--accent-bright); font-weight: 700; padding: 6px 14px; }
-@media (hover: hover) and (pointer: fine) {
-  .quick-chip:hover { color: var(--text); border-color: var(--text-dim); }
-}
-.quick-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
-
 .mode-pill.on { color: var(--accent-bright); border-color: var(--accent); }
 .enter-pill { font-family: var(--mono); font-size: 11px; }
 
@@ -1823,44 +1746,6 @@ pre.has-copy .copy-btn {
 /* Kartochka ichidagi buyruq bloki — xom buyruq shu yerda ochiladi
    (sarlavhada emas, chunki ko'p qatorli skript o'qib bo'lmasdi). */
 .tool-output.tool-cmd pre { max-height: 220px; }
-
-/* Qurilmalar paneli (ixtiyoriy funksiya) */
-.this-device {
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 11px 13px;
-}
-.this-device-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-.this-device-list { display: flex; flex-direction: column; gap: 4px; }
-.this-device-addr {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg-elev);
-  border: 1px solid transparent;
-}
-.this-device-addr:active { border-color: var(--accent); }
-.this-device-addr .addr-url {
-  color: var(--accent-bright);
-  font-family: var(--mono);
-  font-size: 12.5px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.this-device-addr .addr-tag { flex-shrink: 0; color: var(--text-dim); font-size: 10.5px; }
 
 /* Bot suhbati tugmasi — botlar panelidagi asosiy amal, shuning uchun
    accent rangda ajratilgan. */

@@ -155,9 +155,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Unauthenticated health check so another claude-web instance's "Qurilmalar"
-// (devices) list can tell whether this machine is reachable without needing to
-// be logged in first.
+// Unauthenticated health check — boshqa monitoring vositasi server ishlab
+// turganini bilishi uchun.
 //
 // Hostname endi faqat autentifikatsiyadan o'tganlarga ko'rsatiladi — avval u
 // `Access-Control-Allow-Origin: *` bilan birga har qanday saytga oshkor
@@ -267,27 +266,8 @@ app.get('/api/config', (req, res) => {
   res.json({
     instanceMode: config.MODE,
     isRoot: config.IS_ROOT,
-    showDevicesTab: config.SHOW_DEVICES_TAB,
     defaultPermissionMode: config.DEFAULT_PERMISSION_MODE,
   });
-});
-
-// ---------------- device info ----------------
-
-// Lets the "Qurilmalar" tab show this machine's own local-network address(es)
-// so the user doesn't have to run ipconfig/ifconfig to find what to type
-// into another device's "add device" form.
-app.get('/api/device-info', (req, res) => {
-  const nets = os.networkInterfaces();
-  const ips = [];
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name] || []) {
-      if (net.family === 'IPv4' && !net.internal) {
-        ips.push({ name, address: net.address });
-      }
-    }
-  }
-  res.json({ host: os.hostname(), port: Number(PORT), ips });
 });
 
 // ---------------- projects & file browser ----------------

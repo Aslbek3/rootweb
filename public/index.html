@@ -83,8 +83,6 @@
       <button type="button" id="jumpBottomBtn" class="jump-bottom hidden" title="Pastga" aria-label="Eng pastga o'tish">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg>
       </button>
-      <!-- Tez buyruqlar: takrorlanuvchi promptlar (localStorage'da saqlanadi) -->
-      <div id="quickCmds" class="quick-cmds hidden"></div>
       <form id="composer">
         <div id="attachmentRow" class="attachment-row hidden"></div>
         <textarea id="input" rows="1" placeholder="Xabar yozing..."></textarea>
@@ -95,7 +93,6 @@
             </button>
             <input type="file" id="composerFileInput" class="hidden" multiple>
             <button type="button" id="modeBtn" class="mode-pill" data-mode="default" title="Ruxsat rejimi (bosib almashtiring)">Manual</button>
-            <button type="button" id="quickCmdsBtn" class="mode-pill" title="Tez buyruqlar" aria-label="Tez buyruqlar">⚡</button>
             <button type="button" id="enterModeBtn" class="mode-pill enter-pill" title="Enter yuboradi (bosib almashtiring)">Enter ⏎</button>
           </div>
           <div class="composer-toolbar-right">
@@ -119,7 +116,6 @@
         <button type="button" class="drawer-tab active" data-tab="projects">loyihalar</button>
         <button type="button" class="drawer-tab" data-tab="files">fayllar</button>
         <button type="button" class="drawer-tab" data-tab="bots">botlar</button>
-        <button type="button" class="drawer-tab hidden" data-tab="devices" id="devicesTab">qurilmalar</button>
       </div>
       <button class="icon-btn" id="drawerCloseBtn" title="Yopish" aria-label="Yopish">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -173,21 +169,6 @@
       <div class="empty-hint">PM2'dagi jarayonlar — holat, CPU/RAM, qayta ishga tushirish soni. Har 12 soniyada avtomatik yangilanadi.</div>
       <div id="botList" class="bot-list"></div>
     </div>
-    <!-- Qurilmalar — ixtiyoriy, SHOW_DEVICES_TAB bayrog'i bilan yoqiladi -->
-    <div class="drawer-panel hidden" id="panelDevices">
-      <div class="this-device">
-        <div class="this-device-label">bu qurilma</div>
-        <div id="thisDeviceList" class="this-device-list"></div>
-      </div>
-      <div class="empty-hint">Boshqa kompyuterda ham shu ilova ishlab turgan bo'lishi kerak. U yerdagi lokal IP:port manzilini qo'shing.</div>
-      <form id="addDeviceForm" class="create-project-form">
-        <input type="text" id="newDeviceName" placeholder="nomi, masalan Ish kompyuteri" required>
-        <input type="text" id="newDeviceUrl" placeholder="http://192.168.1.8:3210" required>
-        <button type="submit">qo'shish</button>
-      </form>
-      <div id="deviceList" class="project-list"></div>
-    </div>
-
     <!-- VPS holati — Claude'siz, to'g'ridan-to'g'ri o'qiladi (0 token) -->
     <div class="drawer-panel hidden" id="panelStatus">
       <div id="statusBody"></div>

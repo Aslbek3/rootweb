@@ -6,8 +6,6 @@
   const messagesEl = document.getElementById('messages');
   const jumpBottomBtn = document.getElementById('jumpBottomBtn');
   const enterModeBtn = document.getElementById('enterModeBtn');
-  const quickCmdsBtn = document.getElementById('quickCmdsBtn');
-  const quickCmdsEl = document.getElementById('quickCmds');
   const projectSwitcher = document.getElementById('projectSwitcher');
   const searchBtn = document.getElementById('searchBtn');
   const searchBar = document.getElementById('searchBar');
@@ -23,13 +21,6 @@
   const unbanIpInput = document.getElementById('unbanIp');
   const allowSshBtn = document.getElementById('allowSshBtn');
   const bannedList = document.getElementById('bannedList');
-  const devicesTab = document.getElementById('devicesTab');
-  const panelDevices = document.getElementById('panelDevices');
-  const thisDeviceList = document.getElementById('thisDeviceList');
-  const addDeviceForm = document.getElementById('addDeviceForm');
-  const newDeviceNameInput = document.getElementById('newDeviceName');
-  const newDeviceUrlInput = document.getElementById('newDeviceUrl');
-  const deviceListEl = document.getElementById('deviceList');
   const settingsBtn = document.getElementById('settingsBtn');
   const settingsSheet = document.getElementById('settingsSheet');
   const settingsOverlay = document.getElementById('settingsOverlay');
@@ -105,7 +96,6 @@
   let reconnectDelay = 1000;
   let typingEl = null;
   let projectsList = [];
-  let devicesList = [];
   let activeProjectId = null;
   let currentDir = '.';
   // Non-null while browsing an absolute path outside the active loyiha/project
@@ -1410,11 +1400,9 @@
       panelProjects.classList.toggle('hidden', tab !== 'projects');
       panelFiles.classList.toggle('hidden', tab !== 'files');
       panelBots.classList.toggle('hidden', tab !== 'bots');
-      if (panelDevices) panelDevices.classList.toggle('hidden', tab !== 'devices');
       if (panelStatus) panelStatus.classList.toggle('hidden', tab !== 'status');
       if (tab === 'files') { currentDir = '.'; loadFiles(); }
       if (tab === 'bots') { loadBotList(); startBotPolling(); } else { stopBotPolling(); }
-      if (tab === 'devices') { loadDevices(); renderDeviceList(); loadThisDevice(); }
       if (tab === 'status') loadStatus();
     });
   });
@@ -1911,130 +1899,6 @@
   }
   fileViewerCloseBtn.addEventListener('click', closeFileViewer);
   fileViewerOverlay.addEventListener('click', closeFileViewer);
-
-  // ================= qurilmalar (ixtiyoriy, SHOW_DEVICES_TAB) =================
-  // Bir xil tarmoqdagi boshqa claude-web nusxalariga tezkor o'tish
-  // ro'yxati (localStorage). Lokal Wi-Fi holati uchun yaratilgan;
-  // VPS o'rnatmasida ixtiyoriy — `config.js` bayrog'i bilan yoqiladi.
-  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-
-
-  async function loadThisDevice() {
-    thisDeviceList.innerHTML = '<div class="empty-hint">Yuklanmoqda...</div>';
-    try {
-      const res = await fetch('/api/device-info');
-      const data = await res.json();
-      thisDeviceList.innerHTML = '';
-      if (!data.ips || !data.ips.length) {
-        thisDeviceList.innerHTML = '<div class="empty-hint">Lokal tarmoq manzili topilmadi.</div>';
-        return;
-      }
-      for (const ip of data.ips) {
-        const url = `http://${ip.address}:${data.port}`;
-        const row = document.createElement('div');
-        row.className = 'this-device-addr';
-        row.innerHTML = '<span class="addr-url"></span><span class="addr-tag"></span>';
-        row.querySelector('.addr-url').textContent = url;
-        row.querySelector('.addr-tag').textContent = ip.name;
-        row.addEventListener('click', async () => {
-          const tagEl = row.querySelector('.addr-tag');
-          const original = ip.name;
-          try {
-            await navigator.clipboard.writeText(url);
-            tagEl.textContent = 'nusxalandi';
-          } catch {
-            tagEl.textContent = 'nusxalab bo\'lmadi';
-          }
-          setTimeout(() => { tagEl.textContent = original; }, 1500);
-        });
-        thisDeviceList.appendChild(row);
-      }
-    } catch {
-      thisDeviceList.innerHTML = '<div class="empty-hint">Serverga ulanib bo\'lmadi</div>';
-    }
-  }
-
-  const DEVICES_KEY = 'claudeWebDevices';
-
-  function genId() {
-    if (window.crypto && crypto.randomUUID) {
-      try { return crypto.randomUUID(); } catch { /* insecure context (plain http) - fall through */ }
-    }
-    return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  }
-
-  function loadDevices() {
-    try { devicesList = JSON.parse(localStorage.getItem(DEVICES_KEY) || '[]'); }
-    catch { devicesList = []; }
-  }
-
-  function saveDevices() {
-    localStorage.setItem(DEVICES_KEY, JSON.stringify(devicesList));
-  }
-
-  function renderDeviceList() {
-    deviceListEl.innerHTML = '';
-    if (!devicesList.length) {
-      deviceListEl.innerHTML = '<div class="empty-hint">Hali qurilma qo\'shilmagan.</div>';
-      return;
-    }
-    for (const d of devicesList) {
-      const row = document.createElement('div');
-      row.className = 'project-row';
-      const info = document.createElement('div');
-      info.className = 'project-info';
-      info.innerHTML = '<div class="project-label"><span class="online-dot"></span><span class="project-label-text"></span></div><div class="project-path"></div>';
-      info.querySelector('.online-dot').dataset.device = d.id;
-      info.querySelector('.project-label-text').textContent = d.name;
-      info.querySelector('.project-path').textContent = d.url;
-      info.addEventListener('click', () => { window.location.href = d.url; });
-      const delBtn = document.createElement('button');
-      delBtn.className = 'icon-btn project-del';
-      delBtn.title = "O'chirish";
-      delBtn.setAttribute('aria-label', "O'chirish");
-      delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12"/><path d="M10 11v6M14 11v6"/></svg>';
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        devicesList = devicesList.filter((x) => x.id !== d.id);
-        saveDevices();
-        renderDeviceList();
-      });
-      row.appendChild(info);
-      row.appendChild(delBtn);
-      deviceListEl.appendChild(row);
-    }
-    pingDevices();
-  }
-
-  async function pingDevices() {
-    for (const d of devicesList) {
-      const dot = deviceListEl.querySelector(`.online-dot[data-device="${CSS.escape(d.id)}"]`);
-      if (!dot) continue;
-      try {
-        const controller = new AbortController();
-        const t = setTimeout(() => controller.abort(), 2500);
-        const res = await fetch(d.url.replace(/\/$/, '') + '/api/ping', { signal: controller.signal });
-        clearTimeout(t);
-        dot.classList.toggle('online', res.ok);
-      } catch {
-        dot.classList.remove('online');
-      }
-    }
-  }
-
-  addDeviceForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const name = newDeviceNameInput.value.trim();
-    let url = newDeviceUrlInput.value.trim();
-    if (!name || !url) return;
-    if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
-    devicesList.push({ id: genId(), name, url });
-    saveDevices();
-    newDeviceNameInput.value = '';
-    newDeviceUrlInput.value = '';
-    renderDeviceList();
-  });
-
 
   // ---------------- botlar (PM2) ----------------
 
@@ -2614,117 +2478,6 @@
     }
   });
 
-  // ================= F: tez buyruqlar =================
-  // 26 ta bot bilan ishlaganda takrorlanuvchi promptlar ko'p. Telefonda
-  // ularni har safar qo'lda yozish eng ko'p vaqt oladigan narsa edi.
-
-  const DEFAULT_QUICK_CMDS = [
-    { label: 'Botlar holati', text: 'Barcha PM2 jarayonlari holatini tekshir va muammolilarini ayt' },
-    { label: 'Xato loglar', text: 'Oxirgi xatolik loglarini ko\'rsat va sababini tushuntir' },
-    { label: 'Git holat', text: 'Bu loyihada git status va oxirgi 5 ta commitni ko\'rsat' },
-    { label: 'Disk joyi', text: 'Serverda disk va xotira holatini tekshir' },
-  ];
-
-  function loadQuickCmds() {
-    try {
-      const raw = localStorage.getItem('rootwebQuickCmds');
-      if (!raw) return DEFAULT_QUICK_CMDS.slice();
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : DEFAULT_QUICK_CMDS.slice();
-    } catch {
-      return DEFAULT_QUICK_CMDS.slice();
-    }
-  }
-
-  function saveQuickCmds(list) {
-    try { localStorage.setItem('rootwebQuickCmds', JSON.stringify(list)); } catch { /* noop */ }
-  }
-
-  let quickCmds = loadQuickCmds();
-
-  function renderQuickCmds() {
-    quickCmdsEl.innerHTML = '';
-    for (const cmd of quickCmds) {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'quick-chip';
-      chip.textContent = cmd.label;
-      chip.title = cmd.text;
-      chip.addEventListener('click', () => {
-        input.value = cmd.text;
-        autoGrowInput();
-        input.focus();
-      });
-      // Uzoq bosish — o'chirish (telefonda kontekst menyusi o'rniga)
-      let pressTimer = null;
-      const startPress = () => {
-        pressTimer = setTimeout(async () => {
-          const ok = await confirmDialog({
-            title: `"${cmd.label}" ni o'chirish`,
-            message: cmd.text,
-            confirmText: "O'chirish",
-            danger: true,
-          });
-          if (!ok) return;
-          quickCmds = quickCmds.filter((c) => c !== cmd);
-          saveQuickCmds(quickCmds);
-          renderQuickCmds();
-        }, 600);
-      };
-      const cancelPress = () => clearTimeout(pressTimer);
-      chip.addEventListener('touchstart', startPress, { passive: true });
-      chip.addEventListener('touchend', cancelPress);
-      chip.addEventListener('touchmove', cancelPress);
-      chip.addEventListener('mousedown', startPress);
-      chip.addEventListener('mouseup', cancelPress);
-      chip.addEventListener('mouseleave', cancelPress);
-      quickCmdsEl.appendChild(chip);
-    }
-
-    const addChip = document.createElement('button');
-    addChip.type = 'button';
-    addChip.className = 'quick-chip quick-chip-add';
-    addChip.textContent = '+';
-    addChip.title = "Joriy matnni tez buyruq sifatida saqlash";
-    addChip.setAttribute('aria-label', 'Tez buyruq qo\'shish');
-    addChip.addEventListener('click', async () => {
-      const text = input.value.trim();
-      if (!text) {
-        addSystemNote('⚠️ Avval yozuv maydoniga matn kiriting, keyin + ni bosing');
-        return;
-      }
-      const label = await promptDialog({
-        title: 'Tez buyruq qo\'shish',
-        message: text,
-        value: text.slice(0, 24),
-        placeholder: 'Qisqa nom',
-        confirmText: 'Saqlash',
-      });
-      if (!label) return;
-      quickCmds.push({ label, text });
-      saveQuickCmds(quickCmds);
-      renderQuickCmds();
-    });
-    quickCmdsEl.appendChild(addChip);
-  }
-
-  function setQuickCmdsVisible(v) {
-    quickCmdsEl.classList.toggle('hidden', !v);
-    quickCmdsBtn.classList.toggle('on', v);
-    try { localStorage.setItem('rootwebQuickCmdsOpen', v ? '1' : '0'); } catch { /* noop */ }
-    if (v) renderQuickCmds();
-  }
-
-  quickCmdsBtn.addEventListener('click', () => {
-    setQuickCmdsVisible(quickCmdsEl.classList.contains('hidden'));
-  });
-
-  try {
-    setQuickCmdsVisible(localStorage.getItem('rootwebQuickCmdsOpen') === '1');
-  } catch {
-    setQuickCmdsVisible(false);
-  }
-
   // ================= O: swipe bilan drawer ochish/yopish =================
   // Telefonda o'ng chetdan chapga surish — drawer ochiladi; drawer ustida
   // o'ngga surish — yopiladi.
@@ -2777,7 +2530,7 @@
   // ================= instansiya sozlamalari =================
   // Bitta kod ikki xil o'rnatmada ishlaydi (root / sandbox) — qaysi
   // funksiyalar ko'rinishini server `/api/config` orqali aytadi.
-  let instanceConfig = { instanceMode: 'root', isRoot: true, showDevicesTab: false };
+  let instanceConfig = { instanceMode: 'root', isRoot: true };
 
   async function loadInstanceConfig() {
     try {
@@ -2785,7 +2538,6 @@
       if (!res.ok) return;
       instanceConfig = await res.json();
     } catch { /* tarmoq xatosi — standart qiymatlar qoladi */ }
-    if (devicesTab) devicesTab.classList.toggle('hidden', !instanceConfig.showDevicesTab);
     document.documentElement.dataset.instance = instanceConfig.instanceMode;
   }
 
